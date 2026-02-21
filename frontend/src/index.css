@@ -387,6 +387,20 @@ body {
   animation: slide-in-left 0.3s ease-out;
 }
 
+/* Mobile printer grid slide-up animation */
+@keyframes slide-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.25s ease-out;
+}
+
 /* Card shadows - uses theme-specific shadow */
 .card-shadow {
   box-shadow: var(--card-shadow);
