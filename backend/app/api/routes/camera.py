@@ -2,6 +2,8 @@
 
 import asyncio
 import logging
+import platform
+import subprocess
 from collections.abc import AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -218,12 +220,28 @@ async def generate_rtsp_mjpeg_stream(
     logger.debug("ffmpeg command: %s ... (url hidden)", ffmpeg)
 
     process = None
+    _is_windows = platform.system() == "Windows"
+
+    def _read_chunk_sync(stdout, size):
+        """Read from stdout synchronously (for thread-based reading on Windows)."""
+        return stdout.read(size)
+
     try:
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+        if _is_windows:
+            # Windows: use subprocess.Popen (asyncio subprocess not fully supported)
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0,
+            )
+        else:
+            # Linux/macOS: use asyncio subprocess
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
 
         # Track active process for cleanup
         if stream_id:
@@ -231,9 +249,10 @@ async def generate_rtsp_mjpeg_stream(
 
         # Give ffmpeg a moment to start and check for immediate failures
         await asyncio.sleep(0.5)
-        if process.returncode is not None:
-            stderr = await process.stderr.read()
-            logger.error("ffmpeg failed immediately: %s", stderr.decode())
+        returncode = process.poll() if _is_windows else process.returncode
+        if returncode is not None:
+            stderr_data = process.stderr.read() if _is_windows else await process.stderr.read()
+            logger.error("ffmpeg failed immediately: %s", stderr_data.decode())
             yield (
                 b"--frame\r\n"
                 b"Content-Type: text/plain\r\n\r\n"
@@ -254,8 +273,16 @@ async def generate_rtsp_mjpeg_stream(
                 break
 
             try:
-                # Read chunk from ffmpeg - use longer timeout for network hiccups
-                chunk = await asyncio.wait_for(process.stdout.read(8192), timeout=30.0)
+                # Read chunk from ffmpeg
+                if _is_windows:
+                    chunk = await asyncio.wait_for(
+                        asyncio.get_event_loop().run_in_executor(
+                            None, _read_chunk_sync, process.stdout, 8192
+                        ),
+                        timeout=30.0,
+                    )
+                else:
+                    chunk = await asyncio.wait_for(process.stdout.read(8192), timeout=30.0)
 
                 if not chunk:
                     logger.warning("Camera stream ended (no more data)")
@@ -329,20 +356,30 @@ async def generate_rtsp_mjpeg_stream(
             _last_frame_times.pop(printer_id, None)
             _stream_start_times.pop(printer_id, None)
 
-        if process and process.returncode is None:
-            logger.info("Terminating ffmpeg process for stream %s", stream_id)
-            try:
-                process.terminate()
+        if process:
+            returncode = process.poll() if _is_windows else process.returncode
+            if returncode is None:
+                logger.info("Terminating ffmpeg process for stream %s", stream_id)
                 try:
-                    await asyncio.wait_for(process.wait(), timeout=2.0)
-                except TimeoutError:
-                    logger.warning("ffmpeg didn't terminate gracefully, killing (stream_id=%s)", stream_id)
-                    process.kill()
-                    await process.wait()
-            except ProcessLookupError:
-                pass  # Process already dead
-            except OSError as e:
-                logger.warning("Error terminating ffmpeg: %s", e)
+                    process.terminate()
+                    if _is_windows:
+                        try:
+                            process.wait(timeout=2.0)
+                        except subprocess.TimeoutExpired:
+                            logger.warning("ffmpeg didn't terminate gracefully, killing (stream_id=%s)", stream_id)
+                            process.kill()
+                            process.wait()
+                    else:
+                        try:
+                            await asyncio.wait_for(process.wait(), timeout=2.0)
+                        except (TimeoutError, asyncio.TimeoutError):
+                            logger.warning("ffmpeg didn't terminate gracefully, killing (stream_id=%s)", stream_id)
+                            process.kill()
+                            await process.wait()
+                except ProcessLookupError:
+                    pass  # Process already dead
+                except OSError as e:
+                    logger.warning("Error terminating ffmpeg: %s", e)
             logger.info("Camera stream stopped for %s (stream_id=%s)", ip_address, stream_id)
 
 

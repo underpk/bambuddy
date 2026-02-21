@@ -64,7 +64,6 @@ import { ConfigureAmsSlotModal } from '../components/ConfigureAmsSlotModal';
 import { useToast } from '../contexts/ToastContext';
 import { ChamberLight } from '../components/icons/ChamberLight';
 import { SkipObjectsModal, SkipObjectsIcon } from '../components/SkipObjectsModal';
-import { getGlobalTrayId } from '../utils/amsHelpers';
 
 // Complete Bambu Lab filament color mapping by tray_id_name
 // Source: https://github.com/queengooborg/Bambu-Lab-RFID-Library
@@ -1097,7 +1096,6 @@ function getPrinterImage(model: string | null | undefined): string {
   if (modelLower.includes('x1e')) return '/img/printers/x1e.png';
   if (modelLower.includes('x1c') || modelLower.includes('x1carbon')) return '/img/printers/x1c.png';
   if (modelLower.includes('x1')) return '/img/printers/x1c.png';
-  if (modelLower.includes('h2dpro') || modelLower.includes('h2d-pro')) return '/img/printers/h2dpro.png';
   if (modelLower.includes('h2d')) return '/img/printers/h2d.png';
   if (modelLower.includes('h2c')) return '/img/printers/h2c.png';
   if (modelLower.includes('h2s')) return '/img/printers/h2d.png';
@@ -1776,7 +1774,7 @@ function PrinterCard({
 
   // Query for printable objects (for skip functionality)
   // Fetch when printing with 2+ objects OR when modal is open
-  const isPrintingWithObjects = (status?.state === 'RUNNING' || status?.state === 'PAUSE') && (status?.printable_objects_count ?? 0) >= 2;
+  const isPrintingWithObjects = (status?.state === 'RUNNING' || status?.state === 'PAUSE' || status?.state === 'PAUSED') && (status?.printable_objects_count ?? 0) >= 2;
   const { data: objectsData } = useQuery({
     queryKey: ['printableObjects', printer.id],
     queryFn: () => api.getPrintableObjects(printer.id),
@@ -2048,96 +2046,59 @@ function PrinterCard({
     }
   };
 
-  // Camera feed state
-  const [cameraError, setCameraError] = useState(false);
-  const [cameraLoading, setCameraLoading] = useState(true);
-  const [cameraKey, setCameraKey] = useState(Date.now());
-  const cameraImgRef = useRef<HTMLImageElement>(null);
-
-  // Cleanup camera stream on unmount
-  useEffect(() => {
-    return () => {
-      if (cameraImgRef.current) {
-        cameraImgRef.current.src = '';
-      }
-    };
-  }, []);
-
-  // Reset camera when connection changes
-  useEffect(() => {
-    if (isConnected) {
-      setCameraError(false);
-      setCameraLoading(true);
-      setCameraKey(Date.now());
-    }
-  }, [isConnected]);
-
-  // Auto-hide loading spinner after timeout (MJPEG onLoad is unreliable)
-  useEffect(() => {
-    if (cameraLoading) {
-      const timer = setTimeout(() => setCameraLoading(false), 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [cameraLoading, cameraKey]);
-
-  const cameraStreamUrl = isConnected
-    ? `/api/v1/printers/${printer.id}/camera/stream?fps=10&t=${cameraKey}`
-    : '';
-
   return (
     <Card className="relative">
-      {/* Card Header: Printer icon + name + status + menu - always on top */}
-      <div className="flex items-center justify-between gap-2 px-4 py-3">
-        <div className="flex items-center gap-3 min-w-0 flex-1">
-          <img
-            src={getPrinterImage(printer.model)}
-            alt={printer.model || t('common.printer')}
-            className="w-8 h-8 object-contain rounded flex-shrink-0"
-          />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <h3 className="font-semibold text-white text-base">{printer.name}</h3>
-              <div
-                className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
-                  isConnected ? 'bg-status-ok' : 'bg-status-error'
-                }`}
-                title={isConnected ? t('printers.connection.connected') : t('printers.connection.offline')}
+      <CardContent className={cardSize >= 3 ? 'p-5' : ''}>
+        {/* Header */}
+        <div className={getSpacing()}>
+          {/* Top row: Image, Name, Menu */}
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              {/* Printer Model Image */}
+              <img
+                src={getPrinterImage(printer.model)}
+                alt={printer.model || t('common.printer')}
+                className={`object-contain rounded-lg bg-bambu-dark flex-shrink-0 ${getImageSize()}`}
               />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <h3 className={`font-semibold text-white ${getTitleSize()}`}>{printer.name}</h3>
+                  {/* Connection indicator dot for compact mode */}
+                  {viewMode === 'compact' && (
+                    <div
+                      className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                        status?.connected ? 'bg-status-ok' : 'bg-status-error'
+                      }`}
+                      title={status?.connected ? t('printers.connection.connected') : t('printers.connection.offline')}
+                    />
+                  )}
+                </div>
+                <p className="text-sm text-bambu-gray">
+                  {printer.model || 'Unknown Model'}
+                  {/* Nozzle Info - only in expanded */}
+                  {viewMode === 'expanded' && status?.nozzles && status.nozzles[0]?.nozzle_diameter && (
+                    <span className="ml-1.5 text-bambu-gray" title={status.nozzles[0].nozzle_type || 'Nozzle'}>
+                      • {status.nozzles[0].nozzle_diameter}mm
+                    </span>
+                  )}
+                  {viewMode === 'expanded' && maintenanceInfo && maintenanceInfo.total_print_hours > 0 && (
+                    <span className="ml-2 text-bambu-gray">
+                      <Clock className="w-3 h-3 inline-block mr-1" />
+                      {Math.round(maintenanceInfo.total_print_hours)}h
+                    </span>
+                  )}
+                </p>
+              </div>
             </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-1 flex-shrink-0">
-          {/* Quick action buttons in header */}
-          {viewMode === 'expanded' && (
-            <>
-              <button
-                onClick={() => chamberLightMutation.mutate(!status?.chamber_light)}
-                disabled={!isConnected || chamberLightMutation.isPending || !hasPermission('printers:control')}
-                className={`p-1.5 rounded-md disabled:opacity-30 transition-colors ${
-                  status?.chamber_light ? 'bg-yellow-500/20 text-yellow-400' : 'text-bambu-gray hover:bg-bambu-dark-tertiary'
-                }`}
-                title={t('camera.chamberLight')}
+            {/* Menu button */}
+            <div className="relative flex-shrink-0">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowMenu(!showMenu)}
               >
-                <ChamberLight on={status?.chamber_light ?? false} className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => { connectMutation.mutate(); }}
-                className="p-1.5 rounded-md text-bambu-gray hover:bg-bambu-dark-tertiary transition-colors"
-                title={t('printers.reconnect')}
-              >
-                <RefreshCw className="w-4 h-4" />
-              </button>
-            </>
-          )}
-          {/* Menu button */}
-          <div className="relative">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowMenu(!showMenu)}
-            >
-              <MoreVertical className="w-4 h-4" />
-            </Button>
+                <MoreVertical className="w-4 h-4" />
+              </Button>
               {showMenu && (
                 <div className="absolute right-0 mt-2 w-48 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-lg z-20">
                   <button
@@ -2196,51 +2157,7 @@ function PrinterCard({
               )}
             </div>
           </div>
-        </div>
-      {/* Inline Camera Feed */}
-      {viewMode === 'expanded' && (
-        <div className="relative w-full bg-black overflow-hidden" style={{ aspectRatio: '16/9' }}>
-          {isConnected && !cameraError ? (
-            <>
-              {cameraLoading && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black z-10">
-                  <RefreshCw className="w-5 h-5 text-bambu-gray animate-spin" />
-                </div>
-              )}
-              <img
-                ref={cameraImgRef}
-                key={cameraKey}
-                src={cameraStreamUrl}
-                alt={`${printer.name} camera`}
-                className="w-full h-full object-cover"
-                onLoad={() => { setCameraLoading(false); setCameraError(false); }}
-                onError={() => { setCameraLoading(false); setCameraError(true); }}
-                draggable={false}
-              />
-            </>
-          ) : (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center">
-                <Video className="w-6 h-6 text-bambu-gray/50 mx-auto mb-1" />
-                <p className="text-xs text-bambu-gray/50">
-                  {!isConnected ? 'Offline' : 'Camera unavailable'}
-                </p>
-                {cameraError && isConnected && (
-                  <button
-                    onClick={() => { setCameraError(false); setCameraLoading(true); setCameraKey(Date.now()); }}
-                    className="mt-1 px-2 py-0.5 text-xs text-bambu-green hover:text-bambu-green-light"
-                  >
-                    Retry
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-      <CardContent className={cardSize >= 3 ? 'p-5' : ''}>
-        {/* Header */}
-        <div className={getSpacing()}>
+
           {/* Badges row - only in expanded mode */}
           {viewMode === 'expanded' && (
             <div className="flex flex-wrap items-center gap-2 mt-2">
@@ -2450,16 +2367,16 @@ function PrinterCard({
                   {/* Skip Objects button - top right corner, always visible */}
                   <button
                     onClick={() => setShowSkipObjectsModal(true)}
-                    disabled={!(status.state === 'RUNNING' || status.state === 'PAUSE') || (status.printable_objects_count ?? 0) < 2 || !hasPermission('printers:control')}
+                    disabled={!(status.state === 'RUNNING' || status.state === 'PAUSE' || status.state === 'PAUSED') || (status.printable_objects_count ?? 0) < 2 || !hasPermission('printers:control')}
                     className={`absolute top-2 right-2 p-1.5 rounded transition-colors z-10 ${
-                      (status.state === 'RUNNING' || status.state === 'PAUSE') && (status.printable_objects_count ?? 0) >= 2 && hasPermission('printers:control')
+                      (status.state === 'RUNNING' || status.state === 'PAUSE' || status.state === 'PAUSED') && (status.printable_objects_count ?? 0) >= 2 && hasPermission('printers:control')
                         ? 'text-bambu-gray hover:text-white hover:bg-white/10'
                         : 'text-bambu-gray/30 cursor-not-allowed'
                     }`}
                     title={
                       !hasPermission('printers:control')
                         ? t('printers.permission.noControl')
-                        : !(status.state === 'RUNNING' || status.state === 'PAUSE')
+                        : !(status.state === 'RUNNING' || status.state === 'PAUSE' || status.state === 'PAUSED')
                           ? t('printers.skipObjects.onlyWhilePrinting')
                           : (status.printable_objects_count ?? 0) >= 2
                             ? t('printers.skipObjects.tooltip')
@@ -2554,7 +2471,7 @@ function PrinterCard({
                 </div>
 
                 {/* Queue Widget - always visible when there are pending items */}
-                <PrinterQueueWidget printerId={printer.id} printerModel={printer.model} printerState={status.state} plateCleared={status.plate_cleared} />
+                <PrinterQueueWidget printerId={printer.id} printerState={status.state} plateCleared={status.plate_cleared} />
               </>
             )}
 
@@ -2654,7 +2571,7 @@ function PrinterCard({
             {viewMode === 'expanded' && (() => {
               // Determine print state for control buttons
               const isRunning = status.state === 'RUNNING';
-              const isPaused = status.state === 'PAUSE';
+              const isPaused = status.state === 'PAUSED' || status.state === 'PAUSE';
               const isPrinting = isRunning || isPaused;
               const isControlBusy = stopPrintMutation.isPending || pausePrintMutation.isPending || resumePrintMutation.isPending;
 
@@ -2851,7 +2768,7 @@ function PrinterCard({
                                 const inventoryAssignment = onGetAssignment?.(printer.id, ams.id, slotIdx);
                                 const inventoryFill = (() => {
                                   const sp = inventoryAssignment?.spool;
-                                  if (sp && sp.label_weight > 0 && sp.weight_used != null) {
+                                  if (sp && sp.label_weight > 0 && sp.weight_used > 0) {
                                     return Math.round(Math.max(0, sp.label_weight - sp.weight_used) / sp.label_weight * 100);
                                   }
                                   return null;
@@ -2989,7 +2906,6 @@ function PrinterCard({
                                               material: assignment.spool.material,
                                               brand: assignment.spool.brand,
                                               color_name: assignment.spool.color_name,
-                                              remainingWeightGrams: Math.max(0, Math.round(assignment.spool.label_weight - assignment.spool.weight_used)),
                                             } : null,
                                             onAssignSpool: filamentData.vendor !== 'Bambu Lab' ? () => setAssignSpoolModal({
                                               printerId: printer.id,
@@ -3061,7 +2977,8 @@ function PrinterCard({
                         const hasFillLevel = tray?.tray_type && tray.remain >= 0;
                         const isEmpty = !tray?.tray_type;
                         // Check if this is the currently loaded tray
-                        const globalTrayId = getGlobalTrayId(ams.id, tray?.id ?? 0, false);
+                        // Global tray ID = ams.id * 4 + tray.id
+                        const globalTrayId = ams.id * 4 + (tray?.id ?? 0);
                         const isActive = effectiveTrayNow === globalTrayId;
                         // Get cloud preset info if available
                         const cloudInfo = tray?.tray_info_idx ? filamentInfo?.[tray.tray_info_idx] : null;
@@ -3076,7 +2993,7 @@ function PrinterCard({
                         const htInventoryAssignment = onGetAssignment?.(printer.id, ams.id, htTraySlotId);
                         const htInventoryFill = (() => {
                           const sp = htInventoryAssignment?.spool;
-                          if (sp && sp.label_weight > 0 && sp.weight_used != null) {
+                          if (sp && sp.label_weight > 0 && sp.weight_used > 0) {
                             return Math.round(Math.max(0, sp.label_weight - sp.weight_used) / sp.label_weight * 100);
                           }
                           return null;
@@ -3227,7 +3144,6 @@ function PrinterCard({
                                           material: assignment.spool.material,
                                           brand: assignment.spool.brand,
                                           color_name: assignment.spool.color_name,
-                                          remainingWeightGrams: Math.max(0, Math.round(assignment.spool.label_weight - assignment.spool.weight_used)),
                                         } : null,
                                         onAssignSpool: filamentData.vendor !== 'Bambu Lab' ? () => setAssignSpoolModal({
                                           printerId: printer.id,
@@ -3334,7 +3250,7 @@ function PrinterCard({
                               const extInventoryAssignment = onGetAssignment?.(printer.id, 255, slotTrayId);
                               const extInventoryFill = (() => {
                                 const sp = extInventoryAssignment?.spool;
-                                if (sp && sp.label_weight > 0 && sp.weight_used != null) {
+                                if (sp && sp.label_weight > 0 && sp.weight_used > 0) {
                                   return Math.round(Math.max(0, sp.label_weight - sp.weight_used) / sp.label_weight * 100);
                                 }
                                 return null;
@@ -3414,7 +3330,6 @@ function PrinterCard({
                                             material: assignment.spool.material,
                                             brand: assignment.spool.brand,
                                             color_name: assignment.spool.color_name,
-                                            remainingWeightGrams: Math.max(0, Math.round(assignment.spool.label_weight - assignment.spool.weight_used)),
                                           } : null,
                                           onAssignSpool: () => setAssignSpoolModal({
                                             printerId: printer.id,
@@ -4982,7 +4897,7 @@ function PowerDropdownItem({
   );
 }
 
-export function PrintersPage() {
+export function OriginalPrintersPage() {
   const { t } = useTranslation();
   const [showAddModal, setShowAddModal] = useState(false);
   const [hideDisconnected, setHideDisconnected] = useState(() => {

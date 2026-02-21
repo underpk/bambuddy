@@ -7,9 +7,11 @@ Supports two camera protocols:
 
 import asyncio
 import logging
+import platform
 import shutil
 import ssl
 import struct
+import subprocess
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -387,26 +389,48 @@ async def capture_camera_frame_bytes(
     logger.info("Capturing camera frame bytes from %s using RTSP (model: %s)", ip_address, model)
 
     try:
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
+        _is_windows = platform.system() == "Windows"
 
-        try:
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
-        except TimeoutError:
-            process.kill()
-            await process.wait()
-            logger.error("Camera frame bytes capture timed out after %ss", timeout)
-            return None
+        if _is_windows:
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0,
+            )
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    asyncio.get_event_loop().run_in_executor(
+                        None, lambda: process.communicate(timeout=timeout)
+                    ),
+                    timeout=timeout + 5,
+                )
+            except (TimeoutError, subprocess.TimeoutExpired):
+                process.kill()
+                process.wait()
+                logger.error("Camera frame bytes capture timed out after %ss", timeout)
+                return None
+        else:
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            try:
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+            except TimeoutError:
+                process.kill()
+                await process.wait()
+                logger.error("Camera frame bytes capture timed out after %ss", timeout)
+                return None
 
-        if process.returncode == 0 and stdout and len(stdout) >= 100:
+        returncode = process.returncode if not _is_windows else process.returncode
+        if returncode == 0 and stdout and len(stdout) >= 100:
             logger.info("Successfully captured camera frame bytes: %s bytes", len(stdout))
             return stdout
         else:
             stderr_text = stderr.decode() if stderr else "Unknown error"
-            logger.error("ffmpeg frame bytes capture failed (code %s): %s", process.returncode, stderr_text[:200])
+            logger.error("ffmpeg frame bytes capture failed (code %s): %s", returncode, stderr_text[:200])
             return None
 
     except FileNotFoundError:
