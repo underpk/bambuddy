@@ -8,7 +8,7 @@ from pathlib import Path
 
 import defusedxml.ElementTree as ET
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -248,6 +248,9 @@ def _enrich_response(item: PrintQueueItem) -> PrintQueueItemResponse:
 async def list_queue(
     printer_id: int | None = Query(None, description="Filter by printer (-1 for unassigned)"),
     status: str | None = Query(None, description="Filter by status"),
+    target_model: str | None = Query(
+        None, description="Filter by target model (also includes model-based items when combined with printer_id)"
+    ),
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.QUEUE_READ),
 ):
@@ -268,7 +271,31 @@ async def list_queue(
             # Special value: filter for unassigned items
             query = query.where(PrintQueueItem.printer_id.is_(None))
         else:
-            query = query.where(PrintQueueItem.printer_id == printer_id)
+            # Resolve effective model: prefer explicit param, fall back to printer's DB model.
+            # This ensures model-based "Any X" items are returned even when the frontend
+            # doesn't send target_model (e.g. printer.model is NULL on the client side).
+            effective_model = target_model
+            if not effective_model:
+                printer_row = (
+                    await db.execute(select(Printer.model).where(Printer.id == printer_id))
+                ).scalar_one_or_none()
+                effective_model = printer_row
+
+            if effective_model:
+                # Include both printer-specific items AND model-based (unassigned) items
+                query = query.where(
+                    or_(
+                        PrintQueueItem.printer_id == printer_id,
+                        and_(
+                            PrintQueueItem.printer_id.is_(None),
+                            func.lower(PrintQueueItem.target_model) == effective_model.lower(),
+                        ),
+                    )
+                )
+            else:
+                query = query.where(PrintQueueItem.printer_id == printer_id)
+    elif target_model:
+        query = query.where(func.lower(PrintQueueItem.target_model) == target_model.lower())
     if status:
         query = query.where(PrintQueueItem.status == status)
 

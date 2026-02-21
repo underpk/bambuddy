@@ -459,6 +459,8 @@ export default {
       height: 'Hauteur',
       instruction: 'Ajustez le cadre vert pour cibler le plateau.',
     },
+    developerModeWarning: 'Le mode développeur LAN n\'est pas activé sur : {{names}}. Certaines fonctionnalités peuvent ne pas fonctionner.',
+    howToEnable: 'Comment activer',
   },
 
   // Archives page
@@ -882,6 +884,33 @@ export default {
     },
   },
 
+  backgroundDispatch: {
+    unknownFile: 'Unknown file',
+    unknownPrinter: 'Unknown printer',
+    startingPrints: 'Starting prints',
+    progressSummary: '{{complete}}/{{total}} complete • Dispatched: {{dispatched}} • Processing: {{processing}}',
+    expandDetails: 'Expand dispatch details',
+    collapseDetails: 'Collapse dispatch details',
+    dismissToast: 'Dismiss dispatch toast',
+    cancelDispatchJob: 'Cancel dispatch job',
+    cancel: 'Cancel',
+    cancelling: 'Cancelling…',
+    status: {
+      dispatched: 'Dispatched',
+      processing: 'Processing',
+      completed: 'Completed',
+      failed: 'Failed',
+      cancelled: 'Cancelled',
+    },
+    toast: {
+      cancellingUpload: 'Cancelling upload...',
+      cancelled: 'Dispatch cancelled',
+      cancelFailed: 'Failed to cancel dispatch',
+      completeWithFailures: 'Background dispatch complete: {{completed}} succeeded, {{failed}} failed',
+      completeSuccess: 'Background dispatch complete: {{completed}} succeeded',
+    },
+  },
+
   // Statistics page
   stats: {
     title: 'Tableau de bord',
@@ -1247,6 +1276,8 @@ export default {
     // Updates
     checkForUpdatesLabel: 'Vérifier les mises à jour',
     checkPrinterFirmware: 'Vérifier le firmware imprimante',
+    includeBetaUpdates: 'Inclure les versions bêta',
+    includeBetaUpdatesDesc: 'Notifier des versions bêta et préliminaires lors de la vérification des mises à jour',
     // Queue
     enableRetry: 'Activer la rétentative',
     // Home Assistant
@@ -1802,6 +1833,15 @@ export default {
       title: 'Supprimer le groupe',
       message: 'Les utilisateurs de ce groupe perdront ces permissions.',
       confirm: 'Supprimer',
+    },
+    editor: {
+      title: 'Modifier le groupe',
+      createTitle: 'Créer un groupe',
+      search: 'Rechercher des permissions...',
+      selectAll: 'Tout sélectionner',
+      clearAll: 'Tout désélectionner',
+      permissionsSelected: '{{count}} sélectionnée(s)',
+      noResults: 'Aucune permission ne correspond à votre recherche',
     },
   },
 
@@ -2502,6 +2542,7 @@ export default {
     brand: 'Marque',
     searchBrand: 'Chercher marque...',
     useCustomBrand: 'Utiliser "{{brand}}"',
+    useCustomMaterial: 'Utiliser un matériau personnalisé : {{material}}',
     colorName: 'Nom de couleur',
     colorNamePlaceholder: 'Jade White, Fire Red...',
     color: 'Couleur',
@@ -2513,6 +2554,7 @@ export default {
     weightUsed: 'Consommé',
     currentWeight: 'Poids restant',
     measuredWeight: 'Poids mesuré',
+    costPerKg: 'Coût par kg',
     measuredWeightError: 'Le poids mesuré doit être entre {{min}}g et {{max}}g.',
     slicerFilament: 'Filament Slicer',
     slicerFilamentName: 'Nom du Preset Slicer',
@@ -2540,6 +2582,11 @@ export default {
     allMaterials: 'Tous Matériaux',
     filterByBrand: 'Filtrer par marque...',
     showArchived: 'Afficher archivées',
+    quickAdd: 'Ajout rapide (Stock)',
+    quantity: 'Quantité',
+    stock: 'Stock',
+    configured: 'Configuré',
+    spoolsCreated: '{{count}} bobines créées',
     spoolCreated: 'Bobine créée',
     spoolUpdated: 'Bobine mise à jour',
     spoolDeleted: 'Bobine supprimée',
@@ -2674,6 +2721,8 @@ export default {
     kFactor: 'Facteur K',
     fill: 'Remplir',
     configure: 'Configurer',
+    used: 'utilisé',
+    remainingUnit: 'restant',
   },
 
   // Print modal
@@ -2682,6 +2731,7 @@ export default {
     selectPrinter: 'Choisir l\'imprimante',
     selectPlate: 'Choisir le plateau',
     filamentMapping: 'Mapping Filament',
+    totalCost: 'Coût total :',
     printSettings: 'Réglages d\'impression',
     bedLeveling: 'Nivellement plateau',
     flowCalibration: 'Calibration débit',
@@ -2954,6 +3004,14 @@ export default {
       placeholder: 'Auto (défaut)...',
       hint: 'Force l\'IP annoncée via SSDP.',
     },
+    bindIp: {
+      title: 'Interface réseau',
+      placeholder: 'Sélectionner interface...',
+      hint: 'Interface réseau sur laquelle cette imprimante virtuelle écoute. Doit être unique par imprimante.',
+    },
+    proxy: {
+      accessCodeHint: 'En mode proxy, utilisez le code d\'accès de l\'imprimante cible dans le slicer. La connexion est transmise de manière transparente à l\'imprimante réelle.',
+    },
     mode: {
       title: 'Mode',
       archive: 'Archiver',
@@ -2972,19 +3030,9 @@ export default {
     },
     howItWorks: {
       title: 'Fonctionnement',
-      titleProxy: 'Fonctionnement (Mode Proxy)',
-      step1: 'Suivez le guide pour votre plateforme',
-      step2: 'Activez et réglez le code d\'accès',
-      step3: 'Dans le Slicer, allez dans "Ajouter Imprimante"',
-      step4: '"Bambuddy" apparaîtra dans la découverte',
-      step5: 'Connectez avec votre code d\'accès',
-      step6: 'Imprimez vers Bambuddy : le 3MF est archivé',
-      proxyStep1: 'Cible réelle en mode LAN',
-      proxyStep2: 'Choisissez l\'interface réseau',
-      proxyStep3: 'Activez le proxy',
-      proxyStep4: 'Connectez avec le code de la vraie imprimante',
-      proxyStep5: 'Le trafic est relayé par Bambuddy',
-      proxyStep6: 'Streaming caméra : voir doc NAT/IP forwarding',
+      step1: 'Sur le même LAN, les imprimantes virtuelles apparaissent automatiquement dans votre slicer (Bambu Studio / OrcaSlicer). Depuis d\'autres réseaux, ajoutez-les manuellement par adresse IP et code d\'accès.',
+      step2: 'En mode Archive, Revue et File d\'attente, utilisez le bouton "Envoyer" dans votre slicer pour envoyer des fichiers 3MF à Bambuddy. Le slicer affichera "Impression réussie" — le fichier est stocké, pas imprimé.',
+      step3: 'En mode Proxy, l\'imprimante virtuelle relaie tout le trafic vers une vraie imprimante — les impressions démarrent immédiatement comme en connexion directe.',
     },
     status: {
       title: 'Détails du statut',
@@ -3426,4 +3474,18 @@ export default {
 
   // Spoolman Settings
   spoolmanSettings: {},
+
+  // Time
+  time: {
+    unknown: '-',
+    waiting: 'En attente',
+    justNow: 'À l\'instant',
+    now: 'Maintenant',
+    minsAgo: 'il y a {{count}}m',
+    inMins: 'dans {{count}}m',
+    hoursAgo: 'il y a {{count}}h',
+    inHours: 'dans {{count}}h',
+    daysAgo: 'il y a {{count}}j',
+    inDays: 'dans {{count}}j',
+  },
 };
