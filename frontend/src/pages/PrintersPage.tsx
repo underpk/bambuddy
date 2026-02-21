@@ -5437,11 +5437,6 @@ export function PrintersPage() {
     }
   }, [isSidebarCompact, sortedPrinters, selectedPrinterId]);
 
-  // Mobile: find the selected printer object
-  const selectedPrinter = isSidebarCompact
-    ? sortedPrinters.find(p => p.id === selectedPrinterId) || sortedPrinters[0]
-    : null;
-
   // Portal: render StatusSummaryBar into the compact top bar
   const topbarPortal = isSidebarCompact ? document.getElementById('topbar-portal') : null;
 
@@ -5596,48 +5591,65 @@ export function PrintersPage() {
             </Button>
           </CardContent>
         </Card>
-      ) : isSidebarCompact && selectedPrinter ? (
-        /* Mobile: single selected printer card */
-        <PrinterCard
-          key={selectedPrinter.id}
-          printer={selectedPrinter}
-          hideIfDisconnected={false}
-          maintenanceInfo={maintenanceByPrinter[selectedPrinter.id]}
-          viewMode={viewMode}
-          cardSize={cardSize}
-          amsThresholds={settings ? {
-            humidityGood: Number(settings.ams_humidity_good) || 40,
-            humidityFair: Number(settings.ams_humidity_fair) || 60,
-            tempGood: Number(settings.ams_temp_good) || 28,
-            tempFair: Number(settings.ams_temp_fair) || 35,
-          } : undefined}
-          spoolmanEnabled={spoolmanEnabled}
-          hasUnlinkedSpools={hasUnlinkedSpools}
-          linkedSpools={linkedSpools}
-          spoolmanUrl={spoolmanStatus?.url}
-          onGetAssignment={getAssignment}
-          onUnassignSpool={(pid, aid, tid) => unassignMutation.mutate({ printerId: pid, amsId: aid, trayId: tid })}
-          timeFormat={settings?.time_format || 'system'}
-          cameraViewMode={settings?.camera_view_mode || 'window'}
-          onOpenEmbeddedCamera={(id, name) => setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }))}
-          checkPrinterFirmware={settings?.check_printer_firmware !== false}
-        />
-      ) : groupedPrinters ? (
-        /* Grouped by location view */
-        <div className="space-y-6">
-          {Object.entries(groupedPrinters).map(([location, locationPrinters]) => (
-            <div key={location}>
-              <h2 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-bambu-green" />
-                {location}
-                <span className="text-sm font-normal text-bambu-gray">({locationPrinters.length})</span>
-              </h2>
-              <div className={`grid gap-4 ${cardSize >= 3 ? 'gap-6' : ''} ${getGridClasses()}`}>
-                {locationPrinters.map((printer) => (
+      ) : (
+        /*
+         * Render all printer cards once. On mobile, show/hide via CSS so cameras stay connected.
+         * On desktop, show as grid (or grouped grid). Both share the same card instances.
+         */
+        <>
+          {/* Desktop: grouped by location */}
+          {groupedPrinters && !isSidebarCompact && (
+            <div className="space-y-6">
+              {Object.entries(groupedPrinters).map(([location, locationPrinters]) => (
+                <div key={location}>
+                  <h2 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-bambu-green" />
+                    {location}
+                    <span className="text-sm font-normal text-bambu-gray">({locationPrinters.length})</span>
+                  </h2>
+                  <div className={`grid gap-4 ${cardSize >= 3 ? 'gap-6' : ''} ${getGridClasses()}`}>
+                    {locationPrinters.map((printer) => (
+                      <PrinterCard
+                        key={printer.id}
+                        printer={printer}
+                        hideIfDisconnected={hideDisconnected}
+                        maintenanceInfo={maintenanceByPrinter[printer.id]}
+                        viewMode={viewMode}
+                        cardSize={cardSize}
+                        amsThresholds={settings ? {
+                          humidityGood: Number(settings.ams_humidity_good) || 40,
+                          humidityFair: Number(settings.ams_humidity_fair) || 60,
+                          tempGood: Number(settings.ams_temp_good) || 28,
+                          tempFair: Number(settings.ams_temp_fair) || 35,
+                        } : undefined}
+                        spoolmanEnabled={spoolmanEnabled}
+                        hasUnlinkedSpools={hasUnlinkedSpools}
+                        linkedSpools={linkedSpools}
+                        spoolmanUrl={spoolmanStatus?.url}
+                        onGetAssignment={getAssignment}
+                        onUnassignSpool={(pid, aid, tid) => unassignMutation.mutate({ printerId: pid, amsId: aid, trayId: tid })}
+                        timeFormat={settings?.time_format || 'system'}
+                        cameraViewMode={settings?.camera_view_mode || 'window'}
+                        onOpenEmbeddedCamera={(id, name) => setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }))}
+                        checkPrinterFirmware={settings?.check_printer_firmware !== false}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {/* Desktop: regular grid (non-grouped) / Mobile: all cards with show/hide */}
+          {(!groupedPrinters || isSidebarCompact) && (
+            <div className={isSidebarCompact ? '' : `grid gap-4 ${cardSize >= 3 ? 'gap-6' : ''} ${getGridClasses()}`}>
+              {sortedPrinters.map((printer) => (
+                <div
+                  key={printer.id}
+                  className={isSidebarCompact && printer.id !== selectedPrinterId ? 'hidden' : ''}
+                >
                   <PrinterCard
-                    key={printer.id}
                     printer={printer}
-                    hideIfDisconnected={hideDisconnected}
+                    hideIfDisconnected={isSidebarCompact ? false : hideDisconnected}
                     maintenanceInfo={maintenanceByPrinter[printer.id]}
                     viewMode={viewMode}
                     cardSize={cardSize}
@@ -5658,41 +5670,11 @@ export function PrintersPage() {
                     onOpenEmbeddedCamera={(id, name) => setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }))}
                     checkPrinterFirmware={settings?.check_printer_firmware !== false}
                   />
-                ))}
-              </div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      ) : (
-        /* Regular grid view */
-        <div className={`grid gap-4 ${cardSize >= 3 ? 'gap-6' : ''} ${getGridClasses()}`}>
-          {sortedPrinters.map((printer) => (
-            <PrinterCard
-              key={printer.id}
-              printer={printer}
-              hideIfDisconnected={hideDisconnected}
-              maintenanceInfo={maintenanceByPrinter[printer.id]}
-              viewMode={viewMode}
-              cardSize={cardSize}
-              spoolmanEnabled={spoolmanEnabled}
-              hasUnlinkedSpools={hasUnlinkedSpools}
-              linkedSpools={linkedSpools}
-              spoolmanUrl={spoolmanStatus?.url}
-              onGetAssignment={getAssignment}
-              onUnassignSpool={(pid, aid, tid) => unassignMutation.mutate({ printerId: pid, amsId: aid, trayId: tid })}
-              amsThresholds={settings ? {
-                humidityGood: Number(settings.ams_humidity_good) || 40,
-                humidityFair: Number(settings.ams_humidity_fair) || 60,
-                tempGood: Number(settings.ams_temp_good) || 28,
-                tempFair: Number(settings.ams_temp_fair) || 35,
-              } : undefined}
-              timeFormat={settings?.time_format || 'system'}
-              cameraViewMode={settings?.camera_view_mode || 'window'}
-              onOpenEmbeddedCamera={(id, name) => setEmbeddedCameraPrinters(prev => new Map(prev).set(id, { id, name }))}
-              checkPrinterFirmware={settings?.check_printer_firmware !== false}
-            />
-          ))}
-        </div>
+          )}
+        </>
       )}
 
       {showAddModal && (
