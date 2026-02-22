@@ -26,33 +26,68 @@ JPEG_END = b"\xff\xd9"
 _ffmpeg_path: str | None = None
 
 
+def _test_ffmpeg(path: str) -> bool:
+    """Check that ffmpeg can actually be executed (not blocked by policy)."""
+    try:
+        result = subprocess.run(
+            [path, "-version"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=5,
+            creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
 def get_ffmpeg_path() -> str | None:
     """Find the ffmpeg executable path.
 
-    Uses shutil.which first, then checks common installation locations
-    for systems where PATH may be limited (e.g., systemd services).
+    Checks PATH and common installation locations.  On Windows, each
+    candidate is tested with ``ffmpeg -version`` to skip executables
+    blocked by Device Guard / Application Control policies.
     """
     global _ffmpeg_path
 
     if _ffmpeg_path is not None:
         return _ffmpeg_path
 
-    # Try PATH first
-    ffmpeg_path = shutil.which("ffmpeg")
+    _is_windows = platform.system() == "Windows"
 
-    # If not found via PATH, check common installation locations
-    if ffmpeg_path is None:
-        common_paths = [
-            "/usr/bin/ffmpeg",
-            "/usr/local/bin/ffmpeg",
-            "/opt/homebrew/bin/ffmpeg",  # macOS Homebrew
-            "/snap/bin/ffmpeg",  # Ubuntu Snap
-            "C:\\ffmpeg\\bin\\ffmpeg.exe",  # Windows common
-        ]
-        for path in common_paths:
-            if Path(path).exists():
-                ffmpeg_path = path
+    # Build candidate list
+    candidates: list[str] = []
+
+    path_ffmpeg = shutil.which("ffmpeg")
+    if path_ffmpeg:
+        candidates.append(path_ffmpeg)
+
+    # Winget installs on Windows (check before common paths)
+    if _is_windows:
+        import os
+        winget_base = Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Packages"
+        if winget_base.exists():
+            for ffmpeg_exe in winget_base.rglob("ffmpeg.exe"):
+                candidates.append(str(ffmpeg_exe))
                 break
+
+    candidates.extend([
+        "/usr/bin/ffmpeg",
+        "/usr/local/bin/ffmpeg",
+        "/opt/homebrew/bin/ffmpeg",
+        "/snap/bin/ffmpeg",
+        "C:\\ffmpeg\\bin\\ffmpeg.exe",
+    ])
+
+    ffmpeg_path = None
+    for path in candidates:
+        if not Path(path).exists():
+            continue
+        if _is_windows and not _test_ffmpeg(path):
+            logger.warning("ffmpeg at %s is blocked by system policy, skipping", path)
+            continue
+        ffmpeg_path = path
+        break
 
     _ffmpeg_path = ffmpeg_path
     if ffmpeg_path:
