@@ -68,3 +68,16 @@ data/
 *.sarif
 
 debug_logs/
+
+# Playwright MCP
+.playwright-mcp/
+
+# Development screenshots and assets
+*.png
+*.zip
+
+# Extracted webapp copies
+bambu-webapp/
+
+# Logo assets (development)
+logos/
