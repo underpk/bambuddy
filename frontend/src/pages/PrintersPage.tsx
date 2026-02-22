@@ -6,8 +6,6 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import {
   Plus,
-  Link,
-  Unlink,
   Signal,
   Clock,
   MoreVertical,
@@ -806,7 +804,7 @@ function DualNozzleHoverCard({ leftSlot, rightSlot, activeNozzle, filamentInfo, 
 }
 
 // H2C Nozzle Rack Card — compact single row showing 6-position tool-changer dock
-function NozzleRackCard({ slots, filamentInfo }: { slots: import('../api/client').NozzleRackSlot[]; filamentInfo?: Record<string, { name: string; k: number | null }> }) {
+function _NozzleRackCard({ slots, filamentInfo }: { slots: import('../api/client').NozzleRackSlot[]; filamentInfo?: Record<string, { name: string; k: number | null }> }) {
   const { t } = useTranslation();
   // Rack nozzles only (IDs >= 2) — excludes L/R hotend nozzles (IDs 0, 1)
   // H2C rack IDs are 16-21 — map by actual ID so empty slots appear in the correct position
@@ -1114,7 +1112,7 @@ function getPrinterImage(model: string | null | undefined): string {
   return '/img/printers/default.png';
 }
 
-function getWifiStrength(rssi: number): { labelKey: string; color: string; bars: number } {
+function _getWifiStrength(rssi: number): { labelKey: string; color: string; bars: number } {
   if (rssi >= -50) return { labelKey: 'printers.wifiSignal.excellent', color: 'text-bambu-green', bars: 4 };
   if (rssi >= -60) return { labelKey: 'printers.wifiSignal.good', color: 'text-bambu-green', bars: 3 };
   if (rssi >= -70) return { labelKey: 'printers.wifiSignal.fair', color: 'text-yellow-400', bars: 2 };
@@ -1474,8 +1472,8 @@ function PrinterCard({
   onGetAssignment,
   onUnassignSpool,
   timeFormat = 'system',
-  cameraViewMode = 'window',
-  onOpenEmbeddedCamera,
+  cameraViewMode: _cameraViewMode = 'window',
+  onOpenEmbeddedCamera: _onOpenEmbeddedCamera,
   checkPrinterFirmware = true,
 }: {
   printer: Printer;
@@ -1575,7 +1573,7 @@ function PrinterCard({
     max_references?: number;
     roi?: { x: number; y: number; w: number; h: number };
   } | null>(null);
-  const [isCheckingPlate, setIsCheckingPlate] = useState(false);
+  const [_isCheckingPlate, setIsCheckingPlate] = useState(false);
   const [isCalibrating, setIsCalibrating] = useState(false);
   const [editingRoi, setEditingRoi] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [isSavingRoi, setIsSavingRoi] = useState(false);
@@ -1714,7 +1712,7 @@ function PrinterCard({
     queryKey: ['queue', printer.id, 'pending'],
     queryFn: () => api.getQueue(printer.id, 'pending'),
   });
-  const queueCount = queueItems?.length || 0;
+  const _queueCount = queueItems?.length || 0;
 
   // Fetch currently printing queue item to show who started it (Issue #206)
   const { data: printingQueueItems } = useQuery({
@@ -1941,7 +1939,7 @@ function PrinterCard({
   };
 
   // Open plate detection management modal (for calibration/references)
-  const handleOpenPlateManagement = async () => {
+  const _handleOpenPlateManagement = async () => {
     setIsCheckingPlate(true);
     setPlateCheckResult(null);
 
@@ -2111,7 +2109,7 @@ function PrinterCard({
   }
 
   // Size-based styling helpers
-  const getImageSize = () => {
+  const _getImageSize = () => {
     switch (cardSize) {
       case 1: return 'w-10 h-10';
       case 2: return 'w-14 h-14';
@@ -2120,7 +2118,7 @@ function PrinterCard({
       default: return 'w-14 h-14';
     }
   };
-  const getTitleSize = () => {
+  const _getTitleSize = () => {
     switch (cardSize) {
       case 1: return 'text-base truncate';
       case 2: return 'text-lg';
@@ -2129,7 +2127,7 @@ function PrinterCard({
       default: return 'text-lg';
     }
   };
-  const getSpacing = () => {
+  const _getSpacing = () => {
     switch (cardSize) {
       case 1: return 'mb-2';
       case 2: return 'mb-4';
@@ -5084,7 +5082,7 @@ function MobilePrinterTabs({
     }
   }, [selectedId]);
 
-  const shouldExpand = printers.length <= 4;
+  const _shouldExpand = printers.length <= 4;
   const showMoreButton = printers.length > 4;
   // In the tab bar, show first 3 tabs + more button when >4 printers
   const visiblePrinters = showMoreButton ? printers.slice(0, 3) : printers;
