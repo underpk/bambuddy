@@ -3566,11 +3566,35 @@ async def health_check():
 
 @app.get("/manifest.json")
 async def serve_manifest():
-    """Serve PWA manifest."""
+    """Serve PWA manifest with dynamic icon support."""
+    import json
+
+    from backend.app.api.routes.settings import get_setting
+    from backend.app.core.database import get_db
+
     manifest_file = app_settings.static_dir / "manifest.json"
-    if manifest_file.exists():
-        return FileResponse(manifest_file, media_type="application/manifest+json")
-    return {"error": "Manifest not found"}
+    if not manifest_file.exists():
+        return {"error": "Manifest not found"}
+
+    with open(manifest_file) as f:
+        manifest = json.load(f)
+
+    # Check for custom icon
+    async for db in get_db():
+        custom_icon = await get_setting(db, "custom_logo_icon")
+        if custom_icon:
+            icon_url = "/api/v1/settings/logo/icon"
+            manifest["icons"] = [
+                {"src": icon_url, "sizes": "16x16", "type": "image/png"},
+                {"src": icon_url, "sizes": "32x32", "type": "image/png"},
+                {"src": icon_url, "sizes": "192x192", "type": "image/png", "purpose": "any"},
+                {"src": icon_url, "sizes": "512x512", "type": "image/png", "purpose": "any"},
+                {"src": icon_url, "sizes": "180x180", "type": "image/png", "purpose": "any maskable"},
+            ]
+        break
+
+    from fastapi.responses import JSONResponse
+    return JSONResponse(content=manifest, media_type="application/manifest+json")
 
 
 @app.get("/sw.js")

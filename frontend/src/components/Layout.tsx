@@ -107,7 +107,7 @@ export function Layout() {
     staleTime: Infinity,
   });
 
-  const { data: settings } = useQuery({
+  const { data: settings, isLoading: settingsLoading } = useQuery({
     queryKey: ['settings'],
     queryFn: api.getSettings,
     staleTime: 5 * 60 * 1000, // 5 minutes
@@ -151,6 +151,29 @@ export function Layout() {
     const lightLogo = settings?.custom_logo_light ? api.getLogoUrl('light') : defaultLight;
     return { dark: darkLogo, light: lightLogo };
   }, [settings?.custom_logo_dark, settings?.custom_logo_light]);
+
+  // Dynamically update favicon and PWA icons when custom icon is set
+  useEffect(() => {
+    if (settingsLoading) return;
+    const customIcon = settings?.custom_logo_icon;
+    const iconUrl = customIcon ? api.getLogoUrl('icon') + `?v=${encodeURIComponent(customIcon)}` : null;
+
+    // Update all favicon/icon link elements
+    const selectors = [
+      'link[rel="icon"][sizes="32x32"]',
+      'link[rel="icon"][sizes="16x16"]',
+      'link[rel="apple-touch-icon"]',
+    ];
+    const defaults = [
+      '/img/favicon-32x32.png',
+      '/img/favicon-16x16.png',
+      '/img/apple-touch-icon.png',
+    ];
+    selectors.forEach((sel, i) => {
+      const el = document.querySelector(sel) as HTMLLinkElement | null;
+      if (el) el.href = iconUrl || defaults[i];
+    });
+  }, [settings?.custom_logo_icon, settingsLoading]);
 
   // Check debug logging state
   const { data: debugLoggingState } = useQuery({
@@ -436,7 +459,7 @@ export function Layout() {
             <img
               src={mode === 'dark' ? logoSrc.dark : logoSrc.light}
               alt="Bambuddy"
-              className="h-8 shrink-0"
+              className={`h-8 shrink-0 transition-opacity duration-200 ${settingsLoading ? 'opacity-0' : 'opacity-100'}`}
             />
             <div id="topbar-portal" className="flex-1 min-w-0" />
             {location.pathname === '/' && hasPermission('printers:create') && (
@@ -473,7 +496,7 @@ export function Layout() {
           <img
             src={mode === 'dark' ? logoSrc.dark : logoSrc.light}
             alt="Bambuddy"
-            className={isSidebarCompact || sidebarExpanded ? 'h-16 w-auto' : 'h-8 w-8 object-cover object-left'}
+            className={`${isSidebarCompact || sidebarExpanded ? 'h-16 w-auto' : 'h-8 w-8 object-cover object-left'} transition-opacity duration-200 ${settingsLoading ? 'opacity-0' : 'opacity-100'}`}
           />
         </div>
 

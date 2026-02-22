@@ -169,16 +169,18 @@ export function SettingsPage() {
   const [extCameraTestLoading, setExtCameraTestLoading] = useState<Record<number, boolean>>({});
 
   // Logo upload state
-  const [logoUploading, setLogoUploading] = useState<'light' | 'dark' | null>(null);
+  const [logoUploading, setLogoUploading] = useState<'light' | 'dark' | 'icon' | null>(null);
   const lightLogoInputRef = useRef<HTMLInputElement>(null);
   const darkLogoInputRef = useRef<HTMLInputElement>(null);
+  const iconLogoInputRef = useRef<HTMLInputElement>(null);
 
-  const handleLogoUpload = async (variant: 'light' | 'dark', file: File) => {
+  const handleLogoUpload = async (variant: 'light' | 'dark' | 'icon', file: File) => {
     setLogoUploading(variant);
     try {
       await api.uploadLogo(variant, file);
       queryClient.invalidateQueries({ queryKey: ['settings'] });
-      showToast(`${variant === 'light' ? 'Light' : 'Dark'} mode logo updated`, 'success');
+      const label = variant === 'light' ? 'Light mode logo' : variant === 'dark' ? 'Dark mode logo' : 'App icon';
+      showToast(`${label} updated`, 'success');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Upload failed';
       showToast(message, 'error');
@@ -187,11 +189,12 @@ export function SettingsPage() {
     }
   };
 
-  const handleLogoDelete = async (variant: 'light' | 'dark') => {
+  const handleLogoDelete = async (variant: 'light' | 'dark' | 'icon') => {
     try {
       await api.deleteLogo(variant);
       queryClient.invalidateQueries({ queryKey: ['settings'] });
-      showToast(`${variant === 'light' ? 'Light' : 'Dark'} mode logo removed`, 'success');
+      const label = variant === 'light' ? 'Light mode logo' : variant === 'dark' ? 'Dark mode logo' : 'App icon';
+      showToast(`${label} removed`, 'success');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Delete failed';
       showToast(message, 'error');
@@ -1436,6 +1439,64 @@ export function SettingsPage() {
                         </Button>
                       )}
                     </div>
+                  </div>
+                </div>
+
+                {/* App Icon / Favicon */}
+                <div className="mt-4 space-y-2">
+                  <label className="block text-xs text-bambu-gray">App Icon / Favicon</label>
+                  <p className="text-xs text-bambu-gray/70 mb-2">
+                    Replaces the PWA app icon and browser favicon. Use a square PNG for best results.
+                  </p>
+                  <div className="flex items-center gap-2 p-3 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary min-h-[72px]">
+                    {settings?.custom_logo_icon ? (
+                      <img
+                        src={api.getLogoUrl('icon') + `?v=${encodeURIComponent(settings.custom_logo_icon)}`}
+                        alt="Custom app icon"
+                        className="h-12 w-12 rounded-lg object-contain"
+                      />
+                    ) : (
+                      <div className="flex items-center gap-2 text-bambu-gray">
+                        <Image className="w-8 h-8 opacity-30" />
+                        <span className="text-xs">Default icon</span>
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      ref={iconLogoInputRef}
+                      type="file"
+                      accept=".png,.jpg,.jpeg,.webp"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleLogoUpload('icon', file);
+                        e.target.value = '';
+                      }}
+                    />
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => iconLogoInputRef.current?.click()}
+                      disabled={logoUploading === 'icon'}
+                    >
+                      {logoUploading === 'icon' ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Upload className="w-3 h-3" />
+                      )}
+                      Upload
+                    </Button>
+                    {settings?.custom_logo_icon && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleLogoDelete('icon')}
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        Remove
+                      </Button>
+                    )}
                   </div>
                 </div>
               </div>

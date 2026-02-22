@@ -757,9 +757,9 @@ async def upload_logo(
     db: AsyncSession = Depends(get_db),
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
-    """Upload a custom logo for light or dark mode."""
-    if variant not in ("light", "dark"):
-        raise HTTPException(status_code=400, detail="Variant must be 'light' or 'dark'")
+    """Upload a custom logo for light mode, dark mode, or app icon."""
+    if variant not in ("light", "dark", "icon"):
+        raise HTTPException(status_code=400, detail="Variant must be 'light', 'dark', or 'icon'")
 
     ext = Path(file.filename).suffix.lower() if file.filename else ""
     if ext not in ALLOWED_LOGO_EXTENSIONS:
@@ -794,8 +794,8 @@ async def upload_logo(
 @router.get("/logo/{variant}")
 async def get_logo(variant: str, db: AsyncSession = Depends(get_db)):
     """Get the custom logo file (unauthenticated - loaded via <img> tags)."""
-    if variant not in ("light", "dark"):
-        raise HTTPException(status_code=400, detail="Variant must be 'light' or 'dark'")
+    if variant not in ("light", "dark", "icon"):
+        raise HTTPException(status_code=400, detail="Variant must be 'light', 'dark', or 'icon'")
 
     setting_key = f"custom_logo_{variant}"
     filename = await get_setting(db, setting_key)
@@ -816,8 +816,8 @@ async def delete_logo(
     _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
     """Delete the custom logo for a variant, reverting to default."""
-    if variant not in ("light", "dark"):
-        raise HTTPException(status_code=400, detail="Variant must be 'light' or 'dark'")
+    if variant not in ("light", "dark", "icon"):
+        raise HTTPException(status_code=400, detail="Variant must be 'light', 'dark', or 'icon'")
 
     setting_key = f"custom_logo_{variant}"
     filename = await get_setting(db, setting_key)

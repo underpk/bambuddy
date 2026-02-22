@@ -823,6 +823,7 @@ export interface AppSettings {
   // Custom logo
   custom_logo_light: string;
   custom_logo_dark: string;
+  custom_logo_icon: string;
 }
 
 export type AppSettingsUpdate = Partial<AppSettings>;
@@ -3057,7 +3058,7 @@ export const api = {
   getMQTTStatus: () => request<MQTTStatus>('/settings/mqtt/status'),
   resetSettings: () =>
     request<AppSettings>('/settings/reset', { method: 'POST' }),
-  uploadLogo: async (variant: 'light' | 'dark', file: File) => {
+  uploadLogo: async (variant: 'light' | 'dark' | 'icon', file: File) => {
     const formData = new FormData();
     formData.append('file', file);
     const url = `${API_BASE}/settings/logo/${variant}`;
@@ -3072,9 +3073,9 @@ export const api = {
     }
     return response.json() as Promise<{ filename: string; variant: string }>;
   },
-  deleteLogo: (variant: 'light' | 'dark') =>
+  deleteLogo: (variant: 'light' | 'dark' | 'icon') =>
     request<{ message: string }>(`/settings/logo/${variant}`, { method: 'DELETE' }),
-  getLogoUrl: (variant: 'light' | 'dark') => `${API_BASE}/settings/logo/${variant}`,
+  getLogoUrl: (variant: 'light' | 'dark' | 'icon') => `${API_BASE}/settings/logo/${variant}`,
   exportBackup: async (): Promise<{ blob: Blob; filename: string }> => {
     // New simplified backup - complete database + all files
     const url = `${API_BASE}/settings/backup`;
