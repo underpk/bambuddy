@@ -107,7 +107,7 @@ export function Layout() {
     staleTime: Infinity,
   });
 
-  const { data: settings, isLoading: settingsLoading } = useQuery({
+  const { data: settings } = useQuery({
     queryKey: ['settings'],
     queryFn: api.getSettings,
     staleTime: 5 * 60 * 1000, // 5 minutes
@@ -143,37 +143,31 @@ export function Layout() {
 
   const hasSwitchbarPlugs = smartPlugs?.some(p => p.show_in_switchbar) ?? false;
 
-  // Resolve logo URLs: use custom logo if set, otherwise default
+  // Logo URLs - custom logos replace the static files directly,
+  // so we always use the same paths (no flash, instant load).
+  // Cache-bust with setting value so browser picks up new uploads.
   const logoSrc = useMemo(() => {
-    const defaultDark = '/img/bambuddy_logo_dark_transparent.png';
-    const defaultLight = '/img/bambuddy_logo_light.png';
-    const darkLogo = settings?.custom_logo_dark ? api.getLogoUrl('dark') : defaultDark;
-    const lightLogo = settings?.custom_logo_light ? api.getLogoUrl('light') : defaultLight;
-    return { dark: darkLogo, light: lightLogo };
+    const cacheBust = settings?.custom_logo_dark || settings?.custom_logo_light ? `?v=${Date.now()}` : '';
+    return {
+      dark: `/img/bambuddy_logo_dark_transparent.png${cacheBust}`,
+      light: `/img/bambuddy_logo_light.png${cacheBust}`,
+    };
   }, [settings?.custom_logo_dark, settings?.custom_logo_light]);
 
-  // Dynamically update favicon and PWA icons when custom icon is set
+  // Cache-bust favicons after custom icon upload so browser picks up new files
   useEffect(() => {
-    if (settingsLoading) return;
-    const customIcon = settings?.custom_logo_icon;
-    const iconUrl = customIcon ? api.getLogoUrl('icon') + `?v=${encodeURIComponent(customIcon)}` : null;
-
-    // Update all favicon/icon link elements
+    if (!settings?.custom_logo_icon) return;
+    const bust = `?v=${Date.now()}`;
     const selectors = [
       'link[rel="icon"][sizes="32x32"]',
       'link[rel="icon"][sizes="16x16"]',
       'link[rel="apple-touch-icon"]',
     ];
-    const defaults = [
-      '/img/favicon-32x32.png',
-      '/img/favicon-16x16.png',
-      '/img/apple-touch-icon.png',
-    ];
-    selectors.forEach((sel, i) => {
+    selectors.forEach((sel) => {
       const el = document.querySelector(sel) as HTMLLinkElement | null;
-      if (el) el.href = iconUrl || defaults[i];
+      if (el) el.href = el.href.split('?')[0] + bust;
     });
-  }, [settings?.custom_logo_icon, settingsLoading]);
+  }, [settings?.custom_logo_icon]);
 
   // Check debug logging state
   const { data: debugLoggingState } = useQuery({
@@ -459,7 +453,7 @@ export function Layout() {
             <img
               src={mode === 'dark' ? logoSrc.dark : logoSrc.light}
               alt="Bambuddy"
-              className={`h-8 shrink-0 transition-opacity duration-200 ${settingsLoading ? 'opacity-0' : 'opacity-100'}`}
+              className="h-8 shrink-0"
             />
             <div id="topbar-portal" className="flex-1 min-w-0" />
             {location.pathname === '/' && hasPermission('printers:create') && (
@@ -496,7 +490,7 @@ export function Layout() {
           <img
             src={mode === 'dark' ? logoSrc.dark : logoSrc.light}
             alt="Bambuddy"
-            className={`${isSidebarCompact || sidebarExpanded ? 'h-16 w-auto' : 'h-8 w-8 object-cover object-left'} transition-opacity duration-200 ${settingsLoading ? 'opacity-0' : 'opacity-100'}`}
+            className={isSidebarCompact || sidebarExpanded ? 'h-16 w-auto' : 'h-8 w-8 object-cover object-left'}
           />
         </div>
 

@@ -749,6 +749,55 @@ LOGOS_DIR = app_settings.base_dir / "logos"
 LOGOS_DIR.mkdir(parents=True, exist_ok=True)
 ALLOWED_LOGO_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"}
 
+# Static image files that get replaced when a custom logo/icon is uploaded.
+# Originals are backed up to LOGOS_DIR/defaults/ on first upload.
+_STATIC_IMG_DIR = app_settings.static_dir / "img"
+_DEFAULTS_BACKUP_DIR = LOGOS_DIR / "defaults"
+
+_VARIANT_STATIC_FILES: dict[str, list[str]] = {
+    "dark": ["bambuddy_logo_dark_transparent.png", "bambuddy_logo_dark.png"],
+    "light": ["bambuddy_logo_light.png"],
+    "icon": [
+        "favicon-16x16.png",
+        "favicon-32x32.png",
+        "favicon.png",
+        "apple-touch-icon.png",
+        "android-chrome-192x192.png",
+        "android-chrome-512x512.png",
+    ],
+}
+
+
+def _backup_defaults(variant: str) -> None:
+    """Back up original static files before first replacement."""
+    _DEFAULTS_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    for fname in _VARIANT_STATIC_FILES.get(variant, []):
+        backup = _DEFAULTS_BACKUP_DIR / fname
+        original = _STATIC_IMG_DIR / fname
+        if not backup.exists() and original.exists():
+            import shutil
+            shutil.copy2(original, backup)
+
+
+def _apply_to_static(variant: str, content: bytes) -> None:
+    """Overwrite the static image files with the uploaded content."""
+    _backup_defaults(variant)
+    for fname in _VARIANT_STATIC_FILES.get(variant, []):
+        target = _STATIC_IMG_DIR / fname
+        if target.parent.exists():
+            with open(target, "wb") as f:
+                f.write(content)
+
+
+def _restore_defaults(variant: str) -> None:
+    """Restore original static files from backup."""
+    for fname in _VARIANT_STATIC_FILES.get(variant, []):
+        backup = _DEFAULTS_BACKUP_DIR / fname
+        target = _STATIC_IMG_DIR / fname
+        if backup.exists() and target.parent.exists():
+            import shutil
+            shutil.copy2(backup, target)
+
 
 @router.post("/logo/{variant}")
 async def upload_logo(
@@ -777,12 +826,15 @@ async def upload_logo(
         if old_path.is_relative_to(LOGOS_DIR.resolve()) and old_path.exists():
             old_path.unlink()
 
-    # Save new logo
+    # Save new logo to logos dir
     filename = f"{variant}_{uuid.uuid4().hex}{ext}"
     filepath = LOGOS_DIR / filename
     content = await file.read()
     with open(filepath, "wb") as f:
         f.write(content)
+
+    # Also overwrite the static files so the logo loads instantly
+    _apply_to_static(variant, content)
 
     # Update setting
     await set_setting(db, setting_key, filename)
@@ -825,6 +877,9 @@ async def delete_logo(
         filepath = (LOGOS_DIR / filename).resolve()
         if filepath.is_relative_to(LOGOS_DIR.resolve()) and filepath.exists():
             filepath.unlink()
+
+    # Restore original static files
+    _restore_defaults(variant)
 
     await set_setting(db, setting_key, "")
     await db.commit()
