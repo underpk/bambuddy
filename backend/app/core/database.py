@@ -1307,17 +1307,29 @@ async def run_migrations(conn):
 
 
 async def seed_notification_templates():
-    """Seed default notification templates if they don't exist."""
+    """Seed default notification templates if they don't exist.
+
+    Also migrates existing templates from the old plain-text format to the
+    new emoji-formatted style, but only when the user hasn't customized them.
+    """
+    import logging
+
     from sqlalchemy import select
 
-    from backend.app.models.notification_template import DEFAULT_TEMPLATES, NotificationTemplate
+    from backend.app.models.notification_template import (
+        DEFAULT_TEMPLATES,
+        OLD_DEFAULT_TEMPLATES,
+        NotificationTemplate,
+    )
+
+    logger = logging.getLogger(__name__)
 
     async with async_session() as session:
-        # Get existing template event types
-        result = await session.execute(select(NotificationTemplate.event_type))
-        existing_types = {row[0] for row in result.fetchall()}
+        # Get existing templates keyed by event_type
+        result = await session.execute(select(NotificationTemplate))
+        existing_templates = {t.event_type: t for t in result.scalars().all()}
 
-        if not existing_types:
+        if not existing_templates:
             # No templates exist - insert all defaults
             for template_data in DEFAULT_TEMPLATES:
                 template = NotificationTemplate(
@@ -1329,17 +1341,31 @@ async def seed_notification_templates():
                 )
                 session.add(template)
         else:
-            # Templates exist - only add missing ones
+            # Templates exist - add missing ones and migrate old defaults
+            new_defaults_by_type = {t["event_type"]: t for t in DEFAULT_TEMPLATES}
+
             for template_data in DEFAULT_TEMPLATES:
-                if template_data["event_type"] not in existing_types:
+                et = template_data["event_type"]
+                if et not in existing_templates:
+                    # New event type - insert it
                     template = NotificationTemplate(
-                        event_type=template_data["event_type"],
+                        event_type=et,
                         name=template_data["name"],
                         title_template=template_data["title_template"],
                         body_template=template_data["body_template"],
                         is_default=True,
                     )
                     session.add(template)
+                else:
+                    # Existing template - check if it still matches the OLD default
+                    existing = existing_templates[et]
+                    old = OLD_DEFAULT_TEMPLATES.get(et)
+                    if old and existing.title_template == old["title_template"] and existing.body_template == old["body_template"]:
+                        # User hasn't customized - safe to upgrade
+                        new = new_defaults_by_type[et]
+                        existing.title_template = new["title_template"]
+                        existing.body_template = new["body_template"]
+                        logger.info("Migrated notification template '%s' to new format", et)
 
         await session.commit()
 

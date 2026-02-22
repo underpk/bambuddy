@@ -434,6 +434,7 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
     # HMS error codes that should not trigger notifications.
     # These are infrastructure/auth issues, not actionable print errors.
     _HMS_NOTIFICATION_SUPPRESS = {
+        "0300_0001",  # Benign status code sent by some printers (e.g. H2D), not an actual error
         "0500_0007",  # MQTT command verification failed (auth/bind issue, not a print error)
         "0500_4001",  # Failed to connect to Bambu Cloud (network issue)
         "0500_400E",  # Printing was cancelled (user action, not an error)
@@ -981,7 +982,12 @@ async def _send_print_start_notification(
     archive_data: dict | None = None,
     logger=None,
 ):
-    """Helper to send print start notification with optional archive data."""
+    """Helper to send print start notification with optional archive data.
+
+    Prefers the gcode thumbnail from the archive (PNG) over a live camera
+    snapshot so the notification shows what the print *should* look like.
+    Falls back to camera snapshot if no thumbnail is available.
+    """
     if logger is None:
         logger = logging.getLogger(__name__)
 
@@ -993,8 +999,21 @@ async def _send_print_start_notification(
             printer = result.scalar_one_or_none()
             printer_name = printer.name if printer else f"Printer {printer_id}"
 
-            # Capture camera snapshot for notification image attachment
-            image_data = await _capture_snapshot_for_notification(printer_id, printer, logger)
+            # Prefer gcode thumbnail from the archive over a live camera snapshot
+            image_data = None
+            if archive_data and archive_data.get("thumbnail_path"):
+                try:
+                    thumb_path = app_settings.base_dir / archive_data["thumbnail_path"]
+                    if thumb_path.is_file():
+                        image_data = thumb_path.read_bytes()
+                        logger.info("Using gcode thumbnail for print start notification: %s", thumb_path.name)
+                except Exception as e:
+                    logger.debug("Failed to read gcode thumbnail: %s", e)
+
+            # Fall back to camera snapshot
+            if not image_data:
+                image_data = await _capture_snapshot_for_notification(printer_id, printer, logger)
+
             if image_data:
                 if archive_data is None:
                     archive_data = {}
@@ -1290,7 +1309,10 @@ async def on_print_start(printer_id: int, data: dict):
 
                 # Send notification with archive data (reprint/scheduled)
                 if not notification_sent:
-                    archive_data = {"print_time_seconds": archive.print_time_seconds}
+                    archive_data = {
+                        "print_time_seconds": archive.print_time_seconds,
+                        "thumbnail_path": archive.thumbnail_path,
+                    }
                     await _send_print_start_notification(printer_id, data, archive_data, logger)
 
                 # Extract printable objects from the archived 3MF file
@@ -1364,7 +1386,10 @@ async def on_print_start(printer_id: int, data: dict):
                         logger.warning("Failed to record starting energy for existing archive: %s", e)
                 # Send notification with archive data (existing archive)
                 if not notification_sent:
-                    archive_data = {"print_time_seconds": existing_archive.print_time_seconds}
+                    archive_data = {
+                        "print_time_seconds": existing_archive.print_time_seconds,
+                        "thumbnail_path": existing_archive.thumbnail_path,
+                    }
                     await _send_print_start_notification(printer_id, data, archive_data, logger)
                 # Extract printable objects from the archived 3MF file
                 _load_objects_from_archive(existing_archive, printer_id, logger)
@@ -1707,7 +1732,10 @@ async def on_print_start(printer_id: int, data: dict):
 
                 # Send notification with archive data (new archive created)
                 if not notification_sent:
-                    archive_data = {"print_time_seconds": archive.print_time_seconds}
+                    archive_data = {
+                        "print_time_seconds": archive.print_time_seconds,
+                        "thumbnail_path": archive.thumbnail_path,
+                    }
                     await _send_print_start_notification(printer_id, data, archive_data, logger)
 
                 # Extract printable objects for skip object functionality

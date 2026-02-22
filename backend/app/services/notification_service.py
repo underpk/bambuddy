@@ -103,6 +103,13 @@ class NotificationService:
             return f"{hours}h {minutes}m"
         return f"{minutes}m"
 
+    @staticmethod
+    def _detect_image_type(data: bytes) -> tuple[str, str]:
+        """Detect image type from magic bytes. Returns (content_type, extension)."""
+        if data[:8] == b"\x89PNG\r\n\x1a\n":
+            return "image/png", "png"
+        return "image/jpeg", "jpg"
+
     def _clean_filename(self, filename: str) -> str:
         """Extract filename and remove file extensions."""
         import os
@@ -211,7 +218,8 @@ class NotificationService:
             # ntfy supports image attachments via multipart form-data.
             # HTTP headers cannot contain newlines, but ntfy interprets
             # literal \n (backslash-n) as newlines in the Message header.
-            headers["Filename"] = "photo.jpg"
+            _ct, ext = self._detect_image_type(image_data)
+            headers["Filename"] = f"photo.{ext}"
             headers["Message"] = message.replace("\n", "\\n")
             response = await client.put(url, content=image_data, headers=headers)
 
@@ -259,7 +267,8 @@ class NotificationService:
 
         if image_data:
             # Pushover supports image attachments via multipart form-data
-            files = {"attachment": ("photo.jpg", image_data, "image/jpeg")}
+            content_type, ext = self._detect_image_type(image_data)
+            files = {"attachment": (f"photo.{ext}", image_data, content_type)}
             response = await client.post(url, data=data, files=files)
         else:
             response = await client.post(url, data=data)
@@ -296,10 +305,11 @@ class NotificationService:
         if image_data:
             # Use sendPhoto to attach the thumbnail with the caption
             url = f"https://api.telegram.org/bot{bot_token}/sendPhoto"
+            content_type, ext = self._detect_image_type(image_data)
             response = await client.post(
                 url,
                 data={"chat_id": chat_id, "caption": message, "parse_mode": "Markdown"},
-                files={"photo": ("photo.jpg", image_data, "image/jpeg")},
+                files={"photo": (f"photo.{ext}", image_data, content_type)},
             )
         else:
             url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
@@ -393,12 +403,13 @@ class NotificationService:
 
         if image_data:
             # Attach image via multipart form-data and reference in embed
-            embed["image"] = {"url": "attachment://photo.jpg"}
+            content_type, ext = self._detect_image_type(image_data)
+            embed["image"] = {"url": f"attachment://photo.{ext}"}
             payload = {"embeds": [embed]}
             response = await client.post(
                 webhook_url,
                 data={"payload_json": json.dumps(payload)},
-                files={"files[0]": ("photo.jpg", image_data, "image/jpeg")},
+                files={"files[0]": (f"photo.{ext}", image_data, content_type)},
             )
         else:
             response = await client.post(webhook_url, json={"embeds": [embed]})
