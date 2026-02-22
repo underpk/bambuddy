@@ -276,7 +276,7 @@ async def _produce_rtsp_frames(
         "-buffer_size", "1024000",
         "-max_delay", "500000",
         "-i", camera_url,
-        "-vf", f"fps={fps}",
+        "-vf", f"fps={fps},scale=720:-1",
         "-f", "mjpeg",
         "-q:v", "3",
         "-threads", "2",
