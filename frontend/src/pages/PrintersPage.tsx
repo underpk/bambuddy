@@ -804,7 +804,7 @@ function DualNozzleHoverCard({ leftSlot, rightSlot, activeNozzle, filamentInfo, 
 }
 
 // H2C Nozzle Rack Card — compact single row showing 6-position tool-changer dock
-function _NozzleRackCard({ slots, filamentInfo }: { slots: import('../api/client').NozzleRackSlot[]; filamentInfo?: Record<string, { name: string; k: number | null }> }) {
+export function NozzleRackCard({ slots, filamentInfo }: { slots: import('../api/client').NozzleRackSlot[]; filamentInfo?: Record<string, { name: string; k: number | null }> }) {
   const { t } = useTranslation();
   // Rack nozzles only (IDs >= 2) — excludes L/R hotend nozzles (IDs 0, 1)
   // H2C rack IDs are 16-21 — map by actual ID so empty slots appear in the correct position
@@ -1112,7 +1112,7 @@ function getPrinterImage(model: string | null | undefined): string {
   return '/img/printers/default.png';
 }
 
-function _getWifiStrength(rssi: number): { labelKey: string; color: string; bars: number } {
+export function getWifiStrength(rssi: number): { labelKey: string; color: string; bars: number } {
   if (rssi >= -50) return { labelKey: 'printers.wifiSignal.excellent', color: 'text-bambu-green', bars: 4 };
   if (rssi >= -60) return { labelKey: 'printers.wifiSignal.good', color: 'text-bambu-green', bars: 3 };
   if (rssi >= -70) return { labelKey: 'printers.wifiSignal.fair', color: 'text-yellow-400', bars: 2 };
@@ -1573,7 +1573,7 @@ function PrinterCard({
     max_references?: number;
     roi?: { x: number; y: number; w: number; h: number };
   } | null>(null);
-  const [_isCheckingPlate, setIsCheckingPlate] = useState(false);
+
   const [isCalibrating, setIsCalibrating] = useState(false);
   const [editingRoi, setEditingRoi] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const [isSavingRoi, setIsSavingRoi] = useState(false);
@@ -1706,13 +1706,6 @@ function PrinterCard({
     enabled: !!smartPlug,
     refetchInterval: 10000, // 10 seconds for real-time power display
   });
-
-  // Fetch queue count for this printer
-  const { data: queueItems } = useQuery({
-    queryKey: ['queue', printer.id, 'pending'],
-    queryFn: () => api.getQueue(printer.id, 'pending'),
-  });
-  const _queueCount = queueItems?.length || 0;
 
   // Fetch currently printing queue item to show who started it (Issue #206)
   const { data: printingQueueItems } = useQuery({
@@ -1938,37 +1931,6 @@ function PrinterCard({
     plateDetectionMutation.mutate(!printer.plate_detection_enabled);
   };
 
-  // Open plate detection management modal (for calibration/references)
-  const _handleOpenPlateManagement = async () => {
-    setIsCheckingPlate(true);
-    setPlateCheckResult(null);
-
-    // Auto-turn on light if it's off
-    const lightWasOff = status?.chamber_light === false;
-    setPlateCheckLightWasOff(lightWasOff);
-    if (lightWasOff) {
-      await api.setChamberLight(printer.id, true);
-      // Wait for light to physically turn on and camera to adjust exposure
-      // (MQTT command is async, light takes ~1s to turn on, camera needs time to adjust)
-      await new Promise(resolve => setTimeout(resolve, 2500));
-    }
-
-    try {
-      const result = await api.checkPlateEmpty(printer.id, { includeDebugImage: true });
-      setPlateCheckResult(result);
-      fetchPlateReferences();
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : t('printers.toast.failedToCheckPlate'), 'error');
-      // Restore light if check failed
-      if (lightWasOff) {
-        await api.setChamberLight(printer.id, false);
-        setPlateCheckLightWasOff(false);
-      }
-    } finally {
-      setIsCheckingPlate(false);
-    }
-  };
-
   // Close plate check modal and restore light state
   const closePlateCheckModal = useCallback(async () => {
     setPlateCheckResult(null);
@@ -2107,35 +2069,6 @@ function PrinterCard({
   if (shouldHide) {
     return null;
   }
-
-  // Size-based styling helpers
-  const _getImageSize = () => {
-    switch (cardSize) {
-      case 1: return 'w-10 h-10';
-      case 2: return 'w-14 h-14';
-      case 3: return 'w-16 h-16';
-      case 4: return 'w-20 h-20';
-      default: return 'w-14 h-14';
-    }
-  };
-  const _getTitleSize = () => {
-    switch (cardSize) {
-      case 1: return 'text-base truncate';
-      case 2: return 'text-lg';
-      case 3: return 'text-xl';
-      case 4: return 'text-2xl';
-      default: return 'text-lg';
-    }
-  };
-  const _getSpacing = () => {
-    switch (cardSize) {
-      case 1: return 'mb-2';
-      case 2: return 'mb-4';
-      case 3: return 'mb-5';
-      case 4: return 'mb-6';
-      default: return 'mb-4';
-    }
-  };
 
   // Camera feed state
   const [cameraError, setCameraError] = useState(false);
@@ -5082,7 +5015,6 @@ function MobilePrinterTabs({
     }
   }, [selectedId]);
 
-  const _shouldExpand = printers.length <= 4;
   const showMoreButton = printers.length > 4;
   // In the tab bar, show first 3 tabs + more button when >4 printers
   const visiblePrinters = showMoreButton ? printers.slice(0, 3) : printers;
