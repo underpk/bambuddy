@@ -1573,6 +1573,7 @@ function PrinterCard({
     max_references?: number;
     roi?: { x: number; y: number; w: number; h: number };
   } | null>(null);
+  const [isCheckingPlate, setIsCheckingPlate] = useState(false);
 
   const [isCalibrating, setIsCalibrating] = useState(false);
   const [editingRoi, setEditingRoi] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
@@ -1706,6 +1707,13 @@ function PrinterCard({
     enabled: !!smartPlug,
     refetchInterval: 10000, // 10 seconds for real-time power display
   });
+
+  // Fetch queue count for this printer
+  const { data: queueItems } = useQuery({
+    queryKey: ['queue', printer.id, 'pending'],
+    queryFn: () => api.getQueue(printer.id, 'pending'),
+  });
+  const queueCount = queueItems?.length || 0;
 
   // Fetch currently printing queue item to show who started it (Issue #206)
   const { data: printingQueueItems } = useQuery({
@@ -1929,6 +1937,36 @@ function PrinterCard({
   // Toggle plate detection enabled/disabled
   const handleTogglePlateDetection = () => {
     plateDetectionMutation.mutate(!printer.plate_detection_enabled);
+  };
+
+  // Open plate management modal (check plate + show calibration UI)
+  const handleOpenPlateManagement = async () => {
+    setIsCheckingPlate(true);
+    setPlateCheckResult(null);
+
+    // Auto-turn on light if it's off
+    const lightWasOff = status?.chamber_light === false;
+    setPlateCheckLightWasOff(lightWasOff);
+    if (lightWasOff) {
+      await api.setChamberLight(printer.id, true);
+      // Wait for light to physically turn on and camera to adjust exposure
+      await new Promise(resolve => setTimeout(resolve, 2500));
+    }
+
+    try {
+      const result = await api.checkPlateEmpty(printer.id, { includeDebugImage: true });
+      setPlateCheckResult(result);
+      fetchPlateReferences();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : t('printers.toast.failedToCheckPlate'), 'error');
+      // Restore light if check failed
+      if (lightWasOff) {
+        await api.setChamberLight(printer.id, false);
+        setPlateCheckLightWasOff(false);
+      }
+    } finally {
+      setIsCheckingPlate(false);
+    }
   };
 
   // Close plate check modal and restore light state
@@ -2157,6 +2195,17 @@ function PrinterCard({
                   <Wrench className="w-3.5 h-3.5" />
                 </button>
               )}
+              {/* Queue Count Badge */}
+              {queueCount > 0 && (
+                <button
+                  onClick={() => navigate('/queue')}
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-purple-500/20 text-purple-400 hover:opacity-80 transition-opacity"
+                  title={t('printers.queue.inQueue', { count: queueCount })}
+                >
+                  <Layers className="w-3 h-3" />
+                  {queueCount}
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -2174,20 +2223,37 @@ function PrinterCard({
               >
                 <ChamberLight on={status?.chamber_light ?? false} className="w-4 h-4" />
               </button>
-              <button
-                onClick={handleTogglePlateDetection}
-                disabled={!isConnected || plateDetectionMutation.isPending || !hasPermission('printers:update')}
-                className={`p-1.5 rounded-md disabled:opacity-30 transition-colors ${
-                  printer.plate_detection_enabled ? 'bg-green-500/20 text-green-400' : 'text-bambu-gray hover:bg-bambu-dark-tertiary'
-                }`}
-                title={printer.plate_detection_enabled ? t('printers.plateDetection.enabledClick') : t('printers.plateDetection.disabledClick')}
-              >
-                {plateDetectionMutation.isPending ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <ScanSearch className="w-4 h-4" />
-                )}
-              </button>
+              {/* Split button: left toggles plate detection, right chevron opens management modal */}
+              <div className={`inline-flex rounded-md ${printer.plate_detection_enabled ? 'ring-1 ring-green-500' : ''}`}>
+                <button
+                  onClick={handleTogglePlateDetection}
+                  disabled={!isConnected || plateDetectionMutation.isPending || !hasPermission('printers:update')}
+                  className={`p-1.5 rounded-l-md disabled:opacity-30 transition-colors ${
+                    printer.plate_detection_enabled ? 'bg-green-500/20 text-green-400' : 'text-bambu-gray hover:bg-bambu-dark-tertiary'
+                  }`}
+                  title={printer.plate_detection_enabled ? t('printers.plateDetection.enabledClick') : t('printers.plateDetection.disabledClick')}
+                >
+                  {plateDetectionMutation.isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <ScanSearch className="w-4 h-4" />
+                  )}
+                </button>
+                <button
+                  onClick={handleOpenPlateManagement}
+                  disabled={!isConnected || isCheckingPlate || !hasPermission('printers:update')}
+                  className={`px-1 rounded-r-md border-l border-bambu-dark-tertiary disabled:opacity-30 transition-colors ${
+                    printer.plate_detection_enabled ? 'bg-green-500/20 text-green-400' : 'text-bambu-gray hover:bg-bambu-dark-tertiary'
+                  }`}
+                  title={t('printers.plateDetection.manageCalibration')}
+                >
+                  {isCheckingPlate ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <ChevronDown className="w-3 h-3" />
+                  )}
+                </button>
+              </div>
             </>
           )}
           {/* Menu button */}
