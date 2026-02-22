@@ -948,13 +948,11 @@ async def _capture_snapshot_for_notification(printer_id: int, printer, logger) -
                 return frame_data
 
         # Try buffered frame from active stream
-        from backend.app.api.routes.camera import _active_chamber_streams, _active_streams, get_buffered_frame
+        from backend.app.api.routes.camera import get_buffered_frame, has_active_stream
 
-        active_for_printer = [k for k in _active_streams if k.startswith(f"{printer_id}-")]
-        active_chamber = [k for k in _active_chamber_streams if k.startswith(f"{printer_id}-")]
         buffered_frame = get_buffered_frame(printer_id)
 
-        if (active_for_printer or active_chamber) and buffered_frame:
+        if has_active_stream(printer_id) and buffered_frame:
             logger.info("[SNAPSHOT] Using buffered frame for printer %s: %s bytes", printer_id, len(buffered_frame))
             if len(buffered_frame) <= 2_500_000:
                 return buffered_frame
@@ -2508,7 +2506,7 @@ async def on_print_complete(printer_id: int, data: dict):
         try:
             logger.info("[PHOTO-BG] Starting finish photo capture for archive %s", archive_id)
 
-            from backend.app.api.routes.camera import _active_chamber_streams, _active_streams, get_buffered_frame
+            from backend.app.api.routes.camera import get_buffered_frame, has_active_stream
 
             async with async_session() as db:
                 from backend.app.api.routes.settings import get_setting
@@ -2553,14 +2551,9 @@ async def on_print_complete(printer_id: int, data: dict):
                                     logger.info("[PHOTO-BG] Saved external camera frame: %s", photo_filename)
                             else:
                                 # Check if camera stream is active - use buffered frame to avoid freeze
-                                # Check both RTSP streams (_active_streams) and chamber image streams (_active_chamber_streams)
-                                active_for_printer = [k for k in _active_streams if k.startswith(f"{printer_id}-")]
-                                active_chamber_for_printer = [
-                                    k for k in _active_chamber_streams if k.startswith(f"{printer_id}-")
-                                ]
                                 buffered_frame = get_buffered_frame(printer_id)
 
-                                if (active_for_printer or active_chamber_for_printer) and buffered_frame:
+                                if has_active_stream(printer_id) and buffered_frame:
                                     # Use frame from active stream
                                     logger.info("[PHOTO-BG] Using buffered frame from active stream")
                                     photos_dir = archive_dir / "photos"

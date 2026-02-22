@@ -2140,9 +2140,9 @@ function PrinterCard({
     }
   }, [cameraLoading, cameraKey]);
 
-  // Use backend directly for MJPEG streams to avoid exhausting Vite proxy connections
+  // Camera stream URL - use relative path to work with both localhost and tunnels
   const cameraStreamUrl = isConnected
-    ? `http://${window.location.hostname}:8000/api/v1/printers/${printer.id}/camera/stream?fps=10&t=${cameraKey}`
+    ? `/api/v1/printers/${printer.id}/camera/stream?fps=10&t=${cameraKey}`
     : '';
 
   return (
@@ -2351,6 +2351,7 @@ function PrinterCard({
                   <RefreshCw className="w-5 h-5 text-bambu-gray animate-spin" />
                 </div>
               )}
+              {/* Live MJPEG stream (covers snapshot once first frame arrives) */}
               <img
                 ref={cameraImgRef}
                 key={cameraKey}
@@ -2380,7 +2381,7 @@ function PrinterCard({
               </div>
             </div>
           )}
-          {/* Temperature overlay on camera */}
+          {/* Temperature overlay on camera – z-20 so it's always visible, even while loading */}
           {status?.temperatures && isConnected && (() => {
             const nozzleHeating = status.temperatures.nozzle_heating || status.temperatures.nozzle_2_heating || false;
             const bedHeating = status.temperatures.bed_heating || false;
@@ -2392,7 +2393,7 @@ function PrinterCard({
             const singleNozzleSlot = rightNozzleSlot || leftNozzleSlot;
 
             return (
-              <div className="absolute bottom-0 left-0 right-0 flex items-center justify-center gap-4 py-1.5 px-3 bg-black/60 backdrop-blur-sm">
+              <div className="absolute bottom-0 left-0 right-0 z-20 flex items-center justify-center gap-4 py-1.5 px-3 bg-black/60 backdrop-blur-sm">
                 {/* Nozzle temp */}
                 {status.temperatures.nozzle_2 !== undefined ? (
                   <div className="flex items-center gap-1">

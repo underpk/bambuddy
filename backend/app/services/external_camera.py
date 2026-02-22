@@ -543,6 +543,75 @@ async def generate_mjpeg_stream(url: str, camera_type: str, fps: int = 10) -> As
                 await asyncio.sleep(frame_interval)
 
 
+async def generate_raw_frames(url: str, camera_type: str, fps: int = 10) -> AsyncGenerator[bytes, None]:
+    """Generator yielding raw JPEG frames (no MJPEG wrapping).
+
+    Used by SharedStreamManager so one producer serves multiple clients.
+
+    Args:
+        url: Camera URL or USB device path
+        camera_type: "mjpeg", "rtsp", "snapshot", or "usb"
+        fps: Target frames per second
+
+    Yields:
+        Raw JPEG frame bytes
+    """
+    frame_interval = 1.0 / max(fps, 1)
+    last_frame_time = 0.0
+
+    if camera_type == "mjpeg":
+        max_retries = 3
+        for attempt in range(max_retries + 1):
+            frame_yielded = False
+            async for frame in _stream_mjpeg(url):
+                frame_yielded = True
+                current_time = asyncio.get_event_loop().time()
+                if current_time - last_frame_time >= frame_interval:
+                    last_frame_time = current_time
+                    yield frame
+            if not frame_yielded or attempt == max_retries:
+                break
+            logger.warning(
+                "External MJPEG stream ended, reconnecting (attempt %d/%d)...",
+                attempt + 1,
+                max_retries,
+            )
+            await asyncio.sleep(2)
+
+    elif camera_type == "rtsp":
+        max_retries = 3
+        for attempt in range(max_retries + 1):
+            frame_yielded = False
+            async for frame in _stream_rtsp(url, fps):
+                frame_yielded = True
+                yield frame
+            if not frame_yielded or attempt == max_retries:
+                break
+            logger.warning(
+                "External RTSP stream ended, reconnecting (attempt %d/%d)...",
+                attempt + 1,
+                max_retries,
+            )
+            await asyncio.sleep(2)
+
+    elif camera_type == "usb":
+        async for frame in _stream_usb(url, fps):
+            yield frame
+
+    elif camera_type == "snapshot":
+        while True:
+            try:
+                frame = await _capture_snapshot(url, timeout=10)
+                if frame:
+                    yield frame
+                await asyncio.sleep(frame_interval)
+            except asyncio.CancelledError:
+                break
+            except (aiohttp.ClientError, OSError) as e:
+                logger.warning("Snapshot poll failed: %s", e)
+                await asyncio.sleep(frame_interval)
+
+
 def _format_mjpeg_frame(frame: bytes) -> bytes:
     """Format frame for MJPEG HTTP response."""
     return (

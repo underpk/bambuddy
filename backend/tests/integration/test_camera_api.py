@@ -59,46 +59,31 @@ class TestCameraAPI:
         """Verify stop terminates active streams for the printer."""
         printer = await printer_factory()
 
-        # Mock an active stream
-        mock_process = MagicMock()
-        mock_process.returncode = None
-        mock_process.terminate = MagicMock()
-
-        with patch("backend.app.api.routes.camera._active_streams", {f"{printer.id}-abc123": mock_process}):
+        # Mock the shared stream manager to report an active stream
+        with patch("backend.app.api.routes.camera._stream_manager") as mock_manager:
+            mock_manager.stop_printer = AsyncMock(return_value=True)
             response = await async_client.post(f"/api/v1/printers/{printer.id}/camera/stop")
 
         assert response.status_code == 200
         assert response.json()["stopped"] == 1
-        mock_process.terminate.assert_called_once()
+        mock_manager.stop_printer.assert_called_once_with(printer.id)
 
     @pytest.mark.asyncio
     @pytest.mark.integration
     async def test_stop_camera_stream_only_stops_matching_printer(self, async_client: AsyncClient, printer_factory):
         """Verify stop only terminates streams for the specified printer."""
         printer1 = await printer_factory(name="Printer 1")
-        printer2 = await printer_factory(name="Printer 2")
+        _printer2 = await printer_factory(name="Printer 2")
 
-        # Mock active streams for both printers
-        mock_process1 = MagicMock()
-        mock_process1.returncode = None
-        mock_process1.terminate = MagicMock()
-
-        mock_process2 = MagicMock()
-        mock_process2.returncode = None
-        mock_process2.terminate = MagicMock()
-
-        active_streams = {
-            f"{printer1.id}-abc123": mock_process1,
-            f"{printer2.id}-def456": mock_process2,
-        }
-
-        with patch("backend.app.api.routes.camera._active_streams", active_streams):
+        # Mock the shared stream manager
+        with patch("backend.app.api.routes.camera._stream_manager") as mock_manager:
+            mock_manager.stop_printer = AsyncMock(return_value=True)
             response = await async_client.post(f"/api/v1/printers/{printer1.id}/camera/stop")
 
         assert response.status_code == 200
         assert response.json()["stopped"] == 1
-        mock_process1.terminate.assert_called_once()
-        mock_process2.terminate.assert_not_called()
+        # Only the requested printer's stream was stopped
+        mock_manager.stop_printer.assert_called_once_with(printer1.id)
 
     # ========================================================================
     # Camera Test Endpoint
