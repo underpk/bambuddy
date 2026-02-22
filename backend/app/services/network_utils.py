@@ -79,11 +79,56 @@ def get_network_interfaces() -> list[dict]:
                 logger.debug("Error getting info for interface %s: %s", name, e)
 
     except ImportError:
-        # fcntl not available (Windows)
-        logger.warning("fcntl not available, interface detection limited")
+        # fcntl not available (Windows) - use psutil or socket fallback
+        interfaces = _windows_get_interfaces()
     except Exception as e:
         logger.error("Error enumerating interfaces: %s", e)
 
+    return interfaces
+
+
+def _windows_get_interfaces() -> list[dict]:
+    """Get network interfaces on Windows using psutil if available, else socket fallback."""
+    interfaces = []
+    try:
+        import psutil
+
+        for name, addrs in psutil.net_if_addrs().items():
+            if _is_excluded(name.lower()):
+                continue
+            for addr in addrs:
+                if addr.family == socket.AF_INET and addr.address and addr.address != "127.0.0.1":
+                    try:
+                        netmask = addr.netmask or "255.255.255.0"
+                        network = ipaddress.IPv4Network(f"{addr.address}/{netmask}", strict=False)
+                        interfaces.append(
+                            {
+                                "name": name,
+                                "ip": addr.address,
+                                "netmask": netmask,
+                                "subnet": str(network),
+                            }
+                        )
+                    except ValueError:
+                        pass
+    except ImportError:
+        # psutil not available, try basic socket approach
+        try:
+            hostname = socket.gethostname()
+            for ip in socket.getaddrinfo(hostname, None, socket.AF_INET):
+                addr = ip[4][0]
+                if addr and addr != "127.0.0.1":
+                    network = ipaddress.IPv4Network(f"{addr}/24", strict=False)
+                    interfaces.append(
+                        {
+                            "name": "default",
+                            "ip": addr,
+                            "netmask": "255.255.255.0",
+                            "subnet": str(network),
+                        }
+                    )
+        except Exception as e:
+            logger.warning("Socket-based interface detection failed: %s", e)
     return interfaces
 
 

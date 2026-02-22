@@ -820,6 +820,9 @@ export interface AppSettings {
   prometheus_token: string;
   // Bed cooled threshold
   bed_cooled_threshold: number;
+  // Custom logo
+  custom_logo_light: string;
+  custom_logo_dark: string;
 }
 
 export type AppSettingsUpdate = Partial<AppSettings>;
@@ -2329,6 +2332,11 @@ export const api = {
     request<{ success: boolean; message: string }>(`/printers/${printerId}/print/resume`, {
       method: 'POST',
     }),
+  setPrintSpeed: (printerId: number, mode: number) =>
+    request<{ success: boolean; message: string }>(`/printers/${printerId}/print/speed`, {
+      method: 'POST',
+      body: JSON.stringify({ mode }),
+    }),
   clearPlate: (printerId: number) =>
     request<{ success: boolean; message: string }>(`/printers/${printerId}/clear-plate`, {
       method: 'POST',
@@ -3049,6 +3057,24 @@ export const api = {
   getMQTTStatus: () => request<MQTTStatus>('/settings/mqtt/status'),
   resetSettings: () =>
     request<AppSettings>('/settings/reset', { method: 'POST' }),
+  uploadLogo: async (variant: 'light' | 'dark', file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const url = `${API_BASE}/settings/logo/${variant}`;
+    const headers: Record<string, string> = {};
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
+    const response = await fetch(url, { method: 'POST', headers, body: formData });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ detail: 'Upload failed' }));
+      throw new Error(err.detail || 'Upload failed');
+    }
+    return response.json() as Promise<{ filename: string; variant: string }>;
+  },
+  deleteLogo: (variant: 'light' | 'dark') =>
+    request<{ message: string }>(`/settings/logo/${variant}`, { method: 'DELETE' }),
+  getLogoUrl: (variant: 'light' | 'dark') => `${API_BASE}/settings/logo/${variant}`,
   exportBackup: async (): Promise<{ blob: Blob; filename: string }> => {
     // New simplified backup - complete database + all files
     const url = `${API_BASE}/settings/backup`;

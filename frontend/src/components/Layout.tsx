@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Printer, Archive, Calendar, BarChart3, Cloud, Settings, Sun, Moon, ChevronLeft, ChevronRight, Keyboard, Github, GripVertical, ArrowUpCircle, Wrench, FolderKanban, FolderOpen, X, Menu, Info, Plug, Bug, LogOut, Key, Loader2, Disc3, ShieldAlert, type LucideIcon } from 'lucide-react';
+import { Printer, Archive, Calendar, BarChart3, Cloud, Settings, Sun, Moon, ChevronLeft, ChevronRight, Keyboard, Github, GripVertical, ArrowUpCircle, Wrench, FolderKanban, FolderOpen, X, Menu, Info, Plug, Bug, LogOut, Key, Loader2, Disc3, ShieldAlert, Plus, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
 import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
@@ -89,6 +89,8 @@ export function Layout() {
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const hasRedirected = useRef(false);
+  const compactHeaderRef = useRef<HTMLElement>(null);
+  const [compactHeaderHeight, setCompactHeaderHeight] = useState(56);
   const [dismissedUpdateVersion, setDismissedUpdateVersion] = useState<string | null>(() =>
     sessionStorage.getItem('dismissedUpdateVersion')
   );
@@ -140,6 +142,15 @@ export function Layout() {
   });
 
   const hasSwitchbarPlugs = smartPlugs?.some(p => p.show_in_switchbar) ?? false;
+
+  // Resolve logo URLs: use custom logo if set, otherwise default
+  const logoSrc = useMemo(() => {
+    const defaultDark = '/img/bambuddy_logo_dark_transparent.png';
+    const defaultLight = '/img/bambuddy_logo_light.png';
+    const darkLogo = settings?.custom_logo_dark ? api.getLogoUrl('dark') : defaultDark;
+    const lightLogo = settings?.custom_logo_light ? api.getLogoUrl('light') : defaultLight;
+    return { dark: darkLogo, light: lightLogo };
+  }, [settings?.custom_logo_dark, settings?.custom_logo_light]);
 
   // Check debug logging state
   const { data: debugLoggingState } = useQuery({
@@ -320,6 +331,18 @@ export function Layout() {
     localStorage.setItem('sidebarExpanded', String(sidebarExpanded));
   }, [sidebarExpanded]);
 
+  // Track compact header height for dynamic margin
+  useEffect(() => {
+    if (!isSidebarCompact || !compactHeaderRef.current) return;
+    const observer = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        setCompactHeaderHeight(entry.contentRect.height);
+      }
+    });
+    observer.observe(compactHeaderRef.current);
+    return () => observer.disconnect();
+  }, [isSidebarCompact]);
+
   // Close compact drawer on navigation
   useEffect(() => {
     if (isSidebarCompact) {
@@ -401,19 +424,31 @@ export function Layout() {
     <div className="flex min-h-screen">
       {/* Compact Header */}
       {isSidebarCompact && (
-        <header className="fixed top-0 left-0 right-0 z-40 h-14 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary flex items-center px-4">
-          <button
-            onClick={() => setMobileDrawerOpen(true)}
-            className="p-2 -ml-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors"
-            aria-label="Open menu"
-          >
-            <Menu className="w-6 h-6 text-white" />
-          </button>
-          <img
-            src={mode === 'dark' ? '/img/bambuddy_logo_dark_transparent.png' : '/img/bambuddy_logo_light.png'}
-            alt="Bambuddy"
-            className="h-8 ml-3"
-          />
+        <header ref={compactHeaderRef} className="fixed top-0 left-0 right-0 z-40 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary">
+          <div className="flex items-center h-14 px-4 gap-3">
+            <button
+              onClick={() => setMobileDrawerOpen(true)}
+              className="p-2 -ml-2 rounded-lg hover:bg-bambu-dark-tertiary transition-colors shrink-0"
+              aria-label="Open menu"
+            >
+              <Menu className="w-6 h-6 text-white" />
+            </button>
+            <img
+              src={mode === 'dark' ? logoSrc.dark : logoSrc.light}
+              alt="Bambuddy"
+              className="h-8 shrink-0"
+            />
+            <div id="topbar-portal" className="flex-1 min-w-0" />
+            {location.pathname === '/' && hasPermission('printers:create') && (
+              <button
+                onClick={() => window.dispatchEvent(new CustomEvent('add-printer'))}
+                className="p-1.5 rounded-md bg-bambu-green text-white hover:bg-bambu-green/80 transition-colors shrink-0"
+                title={t('printers.addPrinter')}
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            )}
+          </div>
         </header>
       )}
 
@@ -436,7 +471,7 @@ export function Layout() {
         {/* Logo */}
         <div className={`border-b border-bambu-dark-tertiary flex items-center justify-center ${isSidebarCompact || sidebarExpanded ? 'p-4' : 'p-2'}`}>
           <img
-            src={mode === 'dark' ? '/img/bambuddy_logo_dark_transparent.png' : '/img/bambuddy_logo_light.png'}
+            src={mode === 'dark' ? logoSrc.dark : logoSrc.light}
             alt="Bambuddy"
             className={isSidebarCompact || sidebarExpanded ? 'h-16 w-auto' : 'h-8 w-8 object-cover object-left'}
           />
@@ -791,9 +826,12 @@ export function Layout() {
       </aside>
 
       {/* Main content */}
-      <main className={`flex-1 bg-bambu-dark overflow-auto transition-all duration-300 ${
-        isSidebarCompact ? 'mt-14' : sidebarExpanded ? 'ml-64' : 'ml-16'
-      }`}>
+      <main
+        className={`flex-1 bg-bambu-dark overflow-auto transition-all duration-300 ${
+          isSidebarCompact ? '' : sidebarExpanded ? 'ml-64' : 'ml-16'
+        }`}
+        style={isSidebarCompact ? { marginTop: compactHeaderHeight } : undefined}
+      >
         {/* Debug logging indicator */}
         {debugLoggingState?.enabled && (
           <div className="bg-amber-500/20 border-b border-amber-500/30 px-4 py-2 flex items-center justify-between">

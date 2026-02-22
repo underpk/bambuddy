@@ -31,7 +31,7 @@ import { availableLanguages } from '../i18n';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, type ThemeStyle, type DarkBackground, type LightBackground, type ThemeAccent } from '../contexts/ThemeContext';
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Palette } from 'lucide-react';
+import { Palette, Image, Upload } from 'lucide-react';
 
 const validTabs = ['general', 'network', 'plugs', 'notifications', 'filament', 'apikeys', 'virtual-printer', 'users', 'backup'] as const;
 type TabType = typeof validTabs[number];
@@ -167,6 +167,36 @@ export function SettingsPage() {
   // External camera test state
   const [extCameraTestResults, setExtCameraTestResults] = useState<Record<number, { success: boolean; error?: string; resolution?: string } | null>>({});
   const [extCameraTestLoading, setExtCameraTestLoading] = useState<Record<number, boolean>>({});
+
+  // Logo upload state
+  const [logoUploading, setLogoUploading] = useState<'light' | 'dark' | null>(null);
+  const lightLogoInputRef = useRef<HTMLInputElement>(null);
+  const darkLogoInputRef = useRef<HTMLInputElement>(null);
+
+  const handleLogoUpload = async (variant: 'light' | 'dark', file: File) => {
+    setLogoUploading(variant);
+    try {
+      await api.uploadLogo(variant, file);
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
+      showToast(`${variant === 'light' ? 'Light' : 'Dark'} mode logo updated`, 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Upload failed';
+      showToast(message, 'error');
+    } finally {
+      setLogoUploading(null);
+    }
+  };
+
+  const handleLogoDelete = async (variant: 'light' | 'dark') => {
+    try {
+      await api.deleteLogo(variant);
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
+      showToast(`${variant === 'light' ? 'Light' : 'Dark'} mode logo removed`, 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Delete failed';
+      showToast(message, 'error');
+    }
+  };
 
   const handleDefaultViewChange = (path: string) => {
     setDefaultViewState(path);
@@ -1287,6 +1317,128 @@ export function SettingsPage() {
               <p className="text-xs text-bambu-gray">
                 Toggle between dark and light mode using the sun/moon icon in the sidebar.
               </p>
+
+              {/* Custom Logo */}
+              <div className="border-t border-bambu-dark-tertiary pt-4">
+                <h3 className="text-sm font-medium text-white flex items-center gap-2 mb-3">
+                  <Image className="w-4 h-4" />
+                  Custom Logo
+                </h3>
+                <p className="text-xs text-bambu-gray mb-4">
+                  Upload custom logos to replace the default Bambuddy logo in the sidebar and header. You can set separate logos for dark and light mode.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Dark Mode Logo */}
+                  <div className="space-y-2">
+                    <label className="block text-xs text-bambu-gray">Dark Mode Logo</label>
+                    <div className="flex items-center gap-2 p-3 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary min-h-[72px]">
+                      {settings?.custom_logo_dark ? (
+                        <img
+                          src={api.getLogoUrl('dark') + `?v=${encodeURIComponent(settings.custom_logo_dark)}`}
+                          alt="Custom dark logo"
+                          className="h-10 max-w-[140px] object-contain"
+                        />
+                      ) : (
+                        <div className="flex items-center gap-2 text-bambu-gray">
+                          <Image className="w-8 h-8 opacity-30" />
+                          <span className="text-xs">Default logo</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        ref={darkLogoInputRef}
+                        type="file"
+                        accept=".png,.jpg,.jpeg,.gif,.svg,.webp"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleLogoUpload('dark', file);
+                          e.target.value = '';
+                        }}
+                      />
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => darkLogoInputRef.current?.click()}
+                        disabled={logoUploading === 'dark'}
+                      >
+                        {logoUploading === 'dark' ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Upload className="w-3 h-3" />
+                        )}
+                        Upload
+                      </Button>
+                      {settings?.custom_logo_dark && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handleLogoDelete('dark')}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          Remove
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Light Mode Logo */}
+                  <div className="space-y-2">
+                    <label className="block text-xs text-bambu-gray">Light Mode Logo</label>
+                    <div className="flex items-center gap-2 p-3 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary min-h-[72px]">
+                      {settings?.custom_logo_light ? (
+                        <img
+                          src={api.getLogoUrl('light') + `?v=${encodeURIComponent(settings.custom_logo_light)}`}
+                          alt="Custom light logo"
+                          className="h-10 max-w-[140px] object-contain"
+                        />
+                      ) : (
+                        <div className="flex items-center gap-2 text-bambu-gray">
+                          <Image className="w-8 h-8 opacity-30" />
+                          <span className="text-xs">Default logo</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        ref={lightLogoInputRef}
+                        type="file"
+                        accept=".png,.jpg,.jpeg,.gif,.svg,.webp"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleLogoUpload('light', file);
+                          e.target.value = '';
+                        }}
+                      />
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => lightLogoInputRef.current?.click()}
+                        disabled={logoUploading === 'light'}
+                      >
+                        {logoUploading === 'light' ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Upload className="w-3 h-3" />
+                        )}
+                        Upload
+                      </Button>
+                      {settings?.custom_logo_light && (
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handleLogoDelete('light')}
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          Remove
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
             </CardContent>
           </Card>
 

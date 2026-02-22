@@ -1,11 +1,12 @@
 import io
 import logging
+import uuid
 import zipfile
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, UploadFile
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -357,6 +358,7 @@ async def create_backup(
                 ("plate_calibration", app_settings.plate_calibration_dir),
                 ("icons", base_dir / "icons"),
                 ("projects", base_dir / "projects"),
+                ("logos", base_dir / "logos"),
             ]
 
             for name, src_dir in dirs_to_backup:
@@ -466,6 +468,7 @@ async def restore_backup(
                 ("plate_calibration", app_settings.plate_calibration_dir),
                 ("icons", base_dir / "icons"),
                 ("projects", base_dir / "projects"),
+                ("logos", base_dir / "logos"),
             ]
 
             skipped_dirs = []
@@ -736,3 +739,94 @@ async def get_mqtt_status(
     from backend.app.services.mqtt_relay import mqtt_relay
 
     return mqtt_relay.get_status()
+
+
+# =============================================================================
+# Custom Logo
+# =============================================================================
+
+LOGOS_DIR = app_settings.base_dir / "logos"
+LOGOS_DIR.mkdir(parents=True, exist_ok=True)
+ALLOWED_LOGO_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp"}
+
+
+@router.post("/logo/{variant}")
+async def upload_logo(
+    variant: str,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
+):
+    """Upload a custom logo for light or dark mode."""
+    if variant not in ("light", "dark"):
+        raise HTTPException(status_code=400, detail="Variant must be 'light' or 'dark'")
+
+    ext = Path(file.filename).suffix.lower() if file.filename else ""
+    if ext not in ALLOWED_LOGO_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File type not allowed. Use: {', '.join(ALLOWED_LOGO_EXTENSIONS)}",
+        )
+
+    setting_key = f"custom_logo_{variant}"
+
+    # Delete old logo file if it exists
+    old_filename = await get_setting(db, setting_key)
+    if old_filename:
+        old_path = (LOGOS_DIR / old_filename).resolve()
+        if old_path.is_relative_to(LOGOS_DIR.resolve()) and old_path.exists():
+            old_path.unlink()
+
+    # Save new logo
+    filename = f"{variant}_{uuid.uuid4().hex}{ext}"
+    filepath = LOGOS_DIR / filename
+    content = await file.read()
+    with open(filepath, "wb") as f:
+        f.write(content)
+
+    # Update setting
+    await set_setting(db, setting_key, filename)
+    await db.commit()
+
+    return {"filename": filename, "variant": variant}
+
+
+@router.get("/logo/{variant}")
+async def get_logo(variant: str, db: AsyncSession = Depends(get_db)):
+    """Get the custom logo file (unauthenticated - loaded via <img> tags)."""
+    if variant not in ("light", "dark"):
+        raise HTTPException(status_code=400, detail="Variant must be 'light' or 'dark'")
+
+    setting_key = f"custom_logo_{variant}"
+    filename = await get_setting(db, setting_key)
+    if not filename:
+        raise HTTPException(status_code=404, detail="No custom logo set")
+
+    filepath = (LOGOS_DIR / filename).resolve()
+    if not filepath.is_relative_to(LOGOS_DIR.resolve()) or not filepath.exists():
+        raise HTTPException(status_code=404, detail="Logo file not found")
+
+    return FileResponse(filepath)
+
+
+@router.delete("/logo/{variant}")
+async def delete_logo(
+    variant: str,
+    db: AsyncSession = Depends(get_db),
+    _: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
+):
+    """Delete the custom logo for a variant, reverting to default."""
+    if variant not in ("light", "dark"):
+        raise HTTPException(status_code=400, detail="Variant must be 'light' or 'dark'")
+
+    setting_key = f"custom_logo_{variant}"
+    filename = await get_setting(db, setting_key)
+    if filename:
+        filepath = (LOGOS_DIR / filename).resolve()
+        if filepath.is_relative_to(LOGOS_DIR.resolve()) and filepath.exists():
+            filepath.unlink()
+
+    await set_setting(db, setting_key, "")
+    await db.commit()
+
+    return {"message": f"Custom {variant} logo removed"}

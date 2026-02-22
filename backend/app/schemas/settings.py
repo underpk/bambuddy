@@ -148,6 +148,10 @@ class AppSettings(BaseModel):
         default="", description="Bearer token for Prometheus metrics authentication (optional)"
     )
 
+    # Custom logo
+    custom_logo_light: str = Field(default="", description="Filename of custom logo for light mode")
+    custom_logo_dark: str = Field(default="", description="Filename of custom logo for dark mode")
+
 
 class AppSettingsUpdate(BaseModel):
     """Schema for updating settings (all fields optional)."""
@@ -208,3 +212,5 @@ class AppSettingsUpdate(BaseModel):
     preferred_slicer: str | None = None
     prometheus_enabled: bool | None = None
     prometheus_token: str | None = None
+    custom_logo_light: str | None = None
+    custom_logo_dark: str | None = None
