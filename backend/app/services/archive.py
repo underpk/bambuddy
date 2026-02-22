@@ -1143,12 +1143,9 @@ class ArchiveService:
         archive.timelapse_path = str(timelapse_file.relative_to(settings.base_dir))
         await self.db.commit()
 
-        # For non-MP4 videos (e.g. AVI from P1S), kick off background conversion
-        if not filename.lower().endswith(".mp4"):
-            asyncio.create_task(
-                _convert_timelapse_to_mp4(archive_id, timelapse_file),
-                name=f"timelapse-convert-{archive_id}",
-            )
+        # Non-MP4 videos (e.g. AVI from P1S) are saved as-is.
+        # Background FFmpeg conversion disabled — it consumes excessive CPU
+        # on resource-constrained hosts (especially Windows where nice is unavailable).
 
         return True
 
