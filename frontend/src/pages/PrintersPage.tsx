@@ -5014,10 +5014,12 @@ function PrinterTabButton({
   const status = queryClient.getQueryData<{
     connected: boolean;
     state: string | null;
+    progress?: number;
   }>(['printerStatus', printer.id]);
   const isConnected = status?.connected ?? false;
   const isPrinting = isConnected && status?.state === 'RUNNING';
   const isError = isConnected && status?.state === 'FAILED';
+  const progress = status?.progress || 0;
 
   const dotColor = !isConnected
     ? 'bg-gray-500'
@@ -5051,6 +5053,15 @@ function PrinterTabButton({
       }`}>
         {printer.name}
       </span>
+      {/* Progress bar - only when printing */}
+      {isPrinting && (
+        <div className="w-full h-1 rounded-full bg-bambu-dark overflow-hidden mt-0.5">
+          <div
+            className="h-full rounded-full bg-bambu-green transition-all"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      )}
     </button>
   );
 }

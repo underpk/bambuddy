@@ -179,6 +179,44 @@ class _SharedStreamManager:
 _stream_manager = _SharedStreamManager()
 
 
+def cleanup_orphaned_ffmpeg() -> None:
+    """Kill leftover ffmpeg processes from a previous server instance.
+
+    When the server is killed (taskkill, crash, etc.), child ffmpeg processes
+    survive as orphans.  This scans for ffmpeg processes whose command line
+    contains our RTSP streaming signature and terminates them.
+    """
+    if platform.system() != "Windows":
+        return
+    try:
+        import ctypes
+
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "Get-CimInstance Win32_Process -Filter \"name='ffmpeg.exe'\" | "
+             "Where-Object { $_.CommandLine -like '*streaming/live*-f mjpeg*' } | "
+             "Select-Object -ExpandProperty ProcessId"],
+            capture_output=True, text=True, timeout=10,
+            creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
+        )
+        pids = [int(p.strip()) for p in result.stdout.strip().splitlines() if p.strip().isdigit()]
+        if pids:
+            logger.info("Cleaning up %d orphaned ffmpeg process(es): %s", len(pids), pids)
+            for pid in pids:
+                try:
+                    handle = ctypes.windll.kernel32.OpenProcess(1, False, pid)  # PROCESS_TERMINATE
+                    if handle:
+                        ctypes.windll.kernel32.TerminateProcess(handle, 1)
+                        ctypes.windll.kernel32.CloseHandle(handle)
+                        logger.info("Killed orphaned ffmpeg PID %d", pid)
+                except Exception:
+                    pass
+        else:
+            logger.debug("No orphaned ffmpeg processes found")
+    except Exception as e:
+        logger.warning("Failed to cleanup orphaned ffmpeg: %s", e)
+
+
 # ---------------------------------------------------------------------------
 # Public helpers (imported by main.py, plate_detection, etc.)
 # ---------------------------------------------------------------------------

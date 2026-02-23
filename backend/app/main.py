@@ -3197,6 +3197,10 @@ async def lifespan(app: FastAPI):
     # Startup
     await init_db()
 
+    # Kill orphaned ffmpeg processes from previous server instance
+    from backend.app.api.routes.camera import cleanup_orphaned_ffmpeg
+    cleanup_orphaned_ffmpeg()
+
     # Re-apply custom logos to static files (they get overwritten by frontend rebuilds)
     async with async_session() as db:
         from backend.app.api.routes.settings import LOGOS_DIR, _apply_to_static, get_setting
