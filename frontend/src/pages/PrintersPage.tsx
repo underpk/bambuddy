@@ -2113,6 +2113,8 @@ function PrinterCard({
   const [cameraLoading, setCameraLoading] = useState(true);
   const [cameraKey, setCameraKey] = useState(Date.now());
   const cameraImgRef = useRef<HTMLImageElement>(null);
+  const reconnectAttemptsRef = useRef(0);
+  const MAX_RECONNECT = 5;
 
   // Cleanup camera stream on unmount
   useEffect(() => {
@@ -2129,6 +2131,7 @@ function PrinterCard({
       setCameraError(false);
       setCameraLoading(true);
       setCameraKey(Date.now());
+      reconnectAttemptsRef.current = 0;
     }
   }, [isConnected]);
 
@@ -2139,6 +2142,31 @@ function PrinterCard({
       return () => clearTimeout(timer);
     }
   }, [cameraLoading, cameraKey]);
+
+  // Auto-retry on stream error - when backend drops a stale stream or
+  // ffmpeg restarts, the browser fires onError. Automatically reconnect
+  // with exponential backoff instead of showing an error state.
+  const handleCameraError = useCallback(() => {
+    if (reconnectAttemptsRef.current < MAX_RECONNECT && isConnected) {
+      reconnectAttemptsRef.current++;
+      const delay = Math.min(2000 * reconnectAttemptsRef.current, 10000);
+      setTimeout(() => {
+        setCameraError(false);
+        setCameraLoading(true);
+        setCameraKey(Date.now());
+      }, delay);
+    } else {
+      setCameraLoading(false);
+      setCameraError(true);
+    }
+  }, [isConnected]);
+
+  // Reset reconnect counter when we get a successful frame
+  const handleCameraLoad = useCallback(() => {
+    setCameraLoading(false);
+    setCameraError(false);
+    reconnectAttemptsRef.current = 0;
+  }, []);
 
   // Camera stream URL - use relative path to work with both localhost and tunnels
   const cameraStreamUrl = isConnected
@@ -2358,8 +2386,8 @@ function PrinterCard({
                 src={cameraStreamUrl}
                 alt={`${printer.name} camera`}
                 className="w-full h-full object-cover"
-                onLoad={() => { setCameraLoading(false); setCameraError(false); }}
-                onError={() => { setCameraLoading(false); setCameraError(true); }}
+                onLoad={handleCameraLoad}
+                onError={handleCameraError}
                 draggable={false}
               />
             </>

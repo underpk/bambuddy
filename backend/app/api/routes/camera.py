@@ -581,8 +581,17 @@ async def camera_stream(
         frame_interval = 1.0 / max(fps, 1)
         last_version = 0
         STALE_THRESHOLD = 10  # seconds without new frame = stale
+        disconnect_check_counter = 0
         try:
             while not stream.stopping:
+                # Check client disconnect every ~2 seconds to release resources
+                disconnect_check_counter += 1
+                if disconnect_check_counter >= int(2.0 / frame_interval):
+                    disconnect_check_counter = 0
+                    if await request.is_disconnected():
+                        logger.info("Client disconnected from stream for printer %s", printer_id)
+                        break
+
                 if stream.frame_version != last_version and stream.latest_frame:
                     last_version = stream.frame_version
                     frame = stream.latest_frame

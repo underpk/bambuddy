@@ -443,8 +443,14 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
     # Check for new HMS errors and send notifications
     current_hms_errors = getattr(state, "hms_errors", []) or []
     if current_hms_errors:
-        # Build set of current error codes (using attr for uniqueness)
-        current_error_codes = {f"{e.attr:08x}" for e in current_hms_errors}
+        # Build set of current error codes using module+code as a stable key.
+        # Previously used raw attr which can vary (severity/sub-flags) causing
+        # the same conceptual error to look "new" on every MQTT update.
+        def _hms_key(e):
+            code_int = int(e.code.replace("0x", ""), 16) if e.code else 0
+            return f"{e.module:02X}00_{code_int & 0xFFFF:04X}"
+
+        current_error_codes = {_hms_key(e) for e in current_hms_errors}
         previously_notified = _notified_hms_errors.get(printer_id, set())
 
         # Find new errors that haven't been notified yet
@@ -457,7 +463,7 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
         if new_error_codes:
             # Get the actual new errors for the notification
             # Filter to severity >= 2 (skip informational/status messages like H2D sends)
-            new_errors = [e for e in current_hms_errors if f"{e.attr:08x}" in new_error_codes and e.severity >= 2]
+            new_errors = [e for e in current_hms_errors if _hms_key(e) in new_error_codes and e.severity >= 2]
 
             try:
                 async with async_session() as db:
@@ -484,6 +490,8 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
                         printer_id, printer, logging.getLogger(__name__)
                     )
 
+                    sent_count = 0
+                    suppressed_count = 0
                     for error in new_errors:
                         module_name = module_names.get(error.module, f"Module 0x{error.module:02X}")
                         # Build short code like "0700_8010"
@@ -491,8 +499,17 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
                         error_code_int = int(error.code.replace("0x", ""), 16) if error.code else 0
                         error_code_masked = error_code_int & 0xFFFF
                         short_code = f"{(error.attr >> 16) & 0xFFFF:04X}_{error_code_masked:04X}"
+                        # Also build a module-normalized code for suppress matching.
+                        # The attr upper 16 bits can vary (severity/sub-flags) even for
+                        # the same conceptual error, so also check module:00_code form.
+                        module_code = f"{error.module:02X}00_{error_code_masked:04X}"
 
-                        if short_code in _HMS_NOTIFICATION_SUPPRESS:
+                        if short_code in _HMS_NOTIFICATION_SUPPRESS or module_code in _HMS_NOTIFICATION_SUPPRESS:
+                            logging.getLogger(__name__).debug(
+                                "[HMS] Suppressed %s (attr=0x%08X) on printer %d",
+                                short_code, error.attr, printer_id,
+                            )
+                            suppressed_count += 1
                             continue
 
                         error_type = f"{module_name} Error"
@@ -500,12 +517,18 @@ async def on_printer_status_change(printer_id: int, state: PrinterState):
                         description = get_error_description(short_code)
                         error_detail = description if description else f"Error code: {short_code}"
 
+                        logging.getLogger(__name__).info(
+                            "[HMS] Sending notification for %s on printer %d: %s",
+                            short_code, printer_id, error_detail,
+                        )
                         await notification_service.on_printer_error(
                             printer_id, printer_name, error_type, db, error_detail, image_data=error_image_data
                         )
+                        sent_count += 1
 
                     logging.getLogger(__name__).info(
-                        f"[HMS] Sent notification for {len(new_errors)} new error(s) on printer {printer_id}"
+                        "[HMS] Sent notification for %d new error(s) on printer %d (suppressed %d)",
+                        sent_count, printer_id, suppressed_count,
                     )
 
                     # Also publish to MQTT relay
