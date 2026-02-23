@@ -159,21 +159,55 @@ class _SharedStreamManager:
         logger.info("Stopped shared stream for printer %s", stream.printer_id)
 
     async def _run_producer(self, stream: _SharedStream, producer_factory) -> None:
-        """Consume raw JPEG frames from the producer and broadcast them."""
-        try:
-            async for frame in producer_factory():
+        """Consume raw JPEG frames from the producer and broadcast them.
+
+        Automatically restarts the producer if frames stop arriving for
+        STALE_TIMEOUT seconds (e.g. FFmpeg RTSP connection dropped silently).
+        """
+        STALE_TIMEOUT = 15  # seconds without a frame before restarting
+        MAX_RESTARTS = 3
+        restarts = 0
+
+        while restarts <= MAX_RESTARTS and not stream.stopping:
+            try:
+                frame_count = 0
+                async for frame in producer_factory():
+                    if stream.stopping:
+                        break
+                    stream.latest_frame = frame
+                    stream.last_frame_time = time.time()
+                    stream.frame_version += 1
+                    frame_count += 1
+
+                # Producer generator exited normally
                 if stream.stopping:
                     break
-                stream.latest_frame = frame
-                stream.last_frame_time = time.time()
-                stream.frame_version += 1
-        except asyncio.CancelledError:
-            logger.info("Producer cancelled for printer %s", stream.printer_id)
-        except Exception as e:
-            logger.exception("Producer error for printer %s: %s", stream.printer_id, e)
-        finally:
-            stream.stopping = True
-            logger.info("Producer ended for printer %s", stream.printer_id)
+                if frame_count == 0:
+                    logger.warning("Producer for printer %s yielded 0 frames", stream.printer_id)
+                else:
+                    logger.warning(
+                        "Producer for printer %s ended after %d frames", stream.printer_id, frame_count
+                    )
+
+            except asyncio.CancelledError:
+                logger.info("Producer cancelled for printer %s", stream.printer_id)
+                break
+            except Exception as e:
+                logger.exception("Producer error for printer %s: %s", stream.printer_id, e)
+
+            # If clients are still connected, retry after a short delay
+            if stream.client_count > 0 and not stream.stopping:
+                restarts += 1
+                logger.info(
+                    "Restarting producer for printer %s (attempt %d/%d, %d clients)",
+                    stream.printer_id, restarts, MAX_RESTARTS, stream.client_count,
+                )
+                await asyncio.sleep(2)
+            else:
+                break
+
+        stream.stopping = True
+        logger.info("Producer ended for printer %s", stream.printer_id)
 
 
 _stream_manager = _SharedStreamManager()
@@ -297,7 +331,15 @@ async def _produce_rtsp_frames(
     model: str | None,
     fps: int = 15,
 ) -> AsyncGenerator[bytes, None]:
-    """Yield raw JPEG frames from an RTSP camera via a single FFmpeg process."""
+    """Yield raw JPEG frames from an RTSP camera via a single FFmpeg process.
+
+    On Windows, a dedicated reader thread pushes chunks into an asyncio.Queue.
+    This avoids the problem where ``run_in_executor`` blocking reads cannot be
+    cancelled, leaving zombie threads on the default thread pool.
+    """
+    import queue
+    import threading
+
     ffmpeg = get_ffmpeg_path()
     if not ffmpeg:
         logger.error("ffmpeg not found – camera streaming requires ffmpeg")
@@ -327,9 +369,6 @@ async def _produce_rtsp_frames(
     process = None
     _is_windows = platform.system() == "Windows"
 
-    def _read_chunk_sync(stdout, size):
-        return stdout.read(size)
-
     try:
         if _is_windows:
             process = subprocess.Popen(
@@ -357,45 +396,95 @@ async def _produce_rtsp_frames(
         jpeg_start = b"\xff\xd8"
         jpeg_end = b"\xff\xd9"
 
-        while True:
+        if _is_windows:
+            # Dedicated reader thread → asyncio.Queue avoids unkillable executor reads
+            data_queue: queue.Queue[bytes | None] = queue.Queue(maxsize=64)
+            stop_reader = threading.Event()
+
+            def _reader_thread():
+                """Read stdout in a tight loop; push chunks or None on EOF/error."""
+                try:
+                    while not stop_reader.is_set():
+                        chunk = process.stdout.read(8192)
+                        if not chunk:
+                            break
+                        try:
+                            data_queue.put(chunk, timeout=2)
+                        except queue.Full:
+                            # Consumer is too slow, drop chunk
+                            pass
+                except OSError:
+                    pass
+                finally:
+                    data_queue.put(None)  # sentinel
+
+            reader_thread = threading.Thread(target=_reader_thread, daemon=True)
+            reader_thread.start()
+
             try:
-                if _is_windows:
-                    chunk = await asyncio.wait_for(
-                        asyncio.get_event_loop().run_in_executor(
-                            None, _read_chunk_sync, process.stdout, 8192
-                        ),
-                        timeout=30.0,
-                    )
-                else:
-                    chunk = await asyncio.wait_for(process.stdout.read(8192), timeout=30.0)
-
-                if not chunk:
-                    logger.warning("RTSP stream ended (no more data)")
-                    break
-
-                buffer += chunk
-
-                # Extract complete JPEG frames
+                loop = asyncio.get_event_loop()
                 while True:
-                    start_idx = buffer.find(jpeg_start)
-                    if start_idx == -1:
-                        buffer = buffer[-2:] if len(buffer) > 2 else buffer
-                        break
-                    if start_idx > 0:
-                        buffer = buffer[start_idx:]
-                    end_idx = buffer.find(jpeg_end, 2)
-                    if end_idx == -1:
+                    try:
+                        chunk = await asyncio.wait_for(
+                            loop.run_in_executor(None, data_queue.get, True, 5),
+                            timeout=10.0,
+                        )
+                    except TimeoutError:
+                        # Check if ffmpeg is still alive
+                        if process.poll() is not None:
+                            logger.warning("RTSP ffmpeg exited (rc=%s) for %s", process.returncode, ip_address)
+                        else:
+                            logger.warning("RTSP producer read timeout for %s", ip_address)
                         break
 
-                    frame = buffer[: end_idx + 2]
-                    buffer = buffer[end_idx + 2 :]
-                    yield frame
+                    if chunk is None:
+                        logger.warning("RTSP stream ended for %s", ip_address)
+                        break
 
-            except TimeoutError:
-                logger.warning("RTSP producer read timeout")
-                break
-            except asyncio.CancelledError:
-                break
+                    buffer += chunk
+                    while True:
+                        start_idx = buffer.find(jpeg_start)
+                        if start_idx == -1:
+                            buffer = buffer[-2:] if len(buffer) > 2 else buffer
+                            break
+                        if start_idx > 0:
+                            buffer = buffer[start_idx:]
+                        end_idx = buffer.find(jpeg_end, 2)
+                        if end_idx == -1:
+                            break
+                        frame = buffer[: end_idx + 2]
+                        buffer = buffer[end_idx + 2 :]
+                        yield frame
+            finally:
+                stop_reader.set()
+        else:
+            # Linux/Mac: use native async subprocess pipes
+            while True:
+                try:
+                    chunk = await asyncio.wait_for(process.stdout.read(8192), timeout=10.0)
+                    if not chunk:
+                        logger.warning("RTSP stream ended (no more data)")
+                        break
+
+                    buffer += chunk
+                    while True:
+                        start_idx = buffer.find(jpeg_start)
+                        if start_idx == -1:
+                            buffer = buffer[-2:] if len(buffer) > 2 else buffer
+                            break
+                        if start_idx > 0:
+                            buffer = buffer[start_idx:]
+                        end_idx = buffer.find(jpeg_end, 2)
+                        if end_idx == -1:
+                            break
+                        frame = buffer[: end_idx + 2]
+                        buffer = buffer[end_idx + 2 :]
+                        yield frame
+                except TimeoutError:
+                    logger.warning("RTSP producer read timeout")
+                    break
+                except asyncio.CancelledError:
+                    break
 
     except FileNotFoundError:
         logger.error("ffmpeg not found")
@@ -491,6 +580,7 @@ async def camera_stream(
         """Poll the shared buffer and yield MJPEG multipart chunks."""
         frame_interval = 1.0 / max(fps, 1)
         last_version = 0
+        STALE_THRESHOLD = 10  # seconds without new frame = stale
         try:
             while not stream.stopping:
                 if stream.frame_version != last_version and stream.latest_frame:
@@ -502,6 +592,14 @@ async def camera_stream(
                         b"Content-Length: " + str(len(frame)).encode() + b"\r\n"
                         b"\r\n" + frame + b"\r\n"
                     )
+                elif stream.last_frame_time and (time.time() - stream.last_frame_time) > STALE_THRESHOLD:
+                    # No new frames for too long – stream is stale, break so
+                    # the browser reconnects and triggers a fresh producer
+                    logger.warning(
+                        "Stale stream detected for printer %s (no frames for %ds)",
+                        printer_id, STALE_THRESHOLD,
+                    )
+                    break
                 await asyncio.sleep(frame_interval)
         except (asyncio.CancelledError, GeneratorExit):
             pass
