@@ -151,6 +151,7 @@ class AppSettings(BaseModel):
     # Custom logo
     custom_logo_light: str = Field(default="", description="Filename of custom logo for light mode")
     custom_logo_dark: str = Field(default="", description="Filename of custom logo for dark mode")
+    custom_logo_icon: str = Field(default="", description="Filename of custom app icon/favicon")
 
 
 class AppSettingsUpdate(BaseModel):
@@ -214,3 +215,4 @@ class AppSettingsUpdate(BaseModel):
     prometheus_token: str | None = None
     custom_logo_light: str | None = None
     custom_logo_dark: str | None = None
+    custom_logo_icon: str | None = None

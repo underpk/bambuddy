@@ -3197,6 +3197,19 @@ async def lifespan(app: FastAPI):
     # Startup
     await init_db()
 
+    # Re-apply custom logos to static files (they get overwritten by frontend rebuilds)
+    async with async_session() as db:
+        from backend.app.api.routes.settings import LOGOS_DIR, _apply_to_static, get_setting
+
+        for variant in ("dark", "light", "icon"):
+            filename = await get_setting(db, f"custom_logo_{variant}")
+            if filename:
+                logo_path = LOGOS_DIR / filename
+                if logo_path.exists():
+                    with open(logo_path, "rb") as f:
+                        _apply_to_static(variant, f.read())
+                    logging.info("Restored custom %s logo to static files", variant)
+
     # Restore debug logging state from previous session
     await init_debug_logging()
 

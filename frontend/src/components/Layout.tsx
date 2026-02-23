@@ -107,7 +107,7 @@ export function Layout() {
     staleTime: Infinity,
   });
 
-  const { data: settings } = useQuery({
+  const { data: settings, isFetched: settingsFetched } = useQuery({
     queryKey: ['settings'],
     queryFn: api.getSettings,
     staleTime: 5 * 60 * 1000, // 5 minutes
@@ -143,14 +143,13 @@ export function Layout() {
 
   const hasSwitchbarPlugs = smartPlugs?.some(p => p.show_in_switchbar) ?? false;
 
-  // Logo URLs - custom logos replace the static files directly,
-  // so we always use the same paths (no flash, instant load).
-  // Cache-bust with setting value so browser picks up new uploads.
+  // Logo URLs - custom logos replace the static files directly.
+  // Always cache-bust so the browser never serves a stale version.
   const logoSrc = useMemo(() => {
-    const cacheBust = settings?.custom_logo_dark || settings?.custom_logo_light ? `?v=${Date.now()}` : '';
+    const bust = `?v=${settings?.custom_logo_dark || settings?.custom_logo_light || 'default'}`;
     return {
-      dark: `/img/bambuddy_logo_dark_transparent.png${cacheBust}`,
-      light: `/img/bambuddy_logo_light.png${cacheBust}`,
+      dark: `/img/bambuddy_logo_dark_transparent.png${bust}`,
+      light: `/img/bambuddy_logo_light.png${bust}`,
     };
   }, [settings?.custom_logo_dark, settings?.custom_logo_light]);
 
@@ -450,11 +449,13 @@ export function Layout() {
             >
               <Menu className="w-6 h-6 text-white" />
             </button>
-            <img
-              src={mode === 'dark' ? logoSrc.dark : logoSrc.light}
-              alt="Bambuddy"
-              className="h-8 shrink-0"
-            />
+            {settingsFetched && (
+              <img
+                src={mode === 'dark' ? logoSrc.dark : logoSrc.light}
+                alt="Bambuddy"
+                className="h-8 shrink-0"
+              />
+            )}
             <div id="topbar-portal" className="flex-1 min-w-0" />
             {location.pathname === '/' && hasPermission('printers:create') && (
               <button
@@ -487,11 +488,13 @@ export function Layout() {
       >
         {/* Logo */}
         <div className={`border-b border-bambu-dark-tertiary flex items-center justify-center ${isSidebarCompact || sidebarExpanded ? 'p-4' : 'p-2'}`}>
-          <img
-            src={mode === 'dark' ? logoSrc.dark : logoSrc.light}
-            alt="Bambuddy"
-            className={isSidebarCompact || sidebarExpanded ? 'h-16 w-auto' : 'h-8 w-8 object-cover object-left'}
-          />
+          {settingsFetched && (
+            <img
+              src={mode === 'dark' ? logoSrc.dark : logoSrc.light}
+              alt="Bambuddy"
+              className={isSidebarCompact || sidebarExpanded ? 'h-16 w-auto' : 'h-8 w-8 object-cover object-left'}
+            />
+          )}
         </div>
 
         {/* Navigation */}
