@@ -1112,6 +1112,7 @@ function getPrinterImage(model: string | null | undefined): string {
   return '/img/printers/default.png';
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function getWifiStrength(rssi: number): { labelKey: string; color: string; bars: number } {
   if (rssi >= -50) return { labelKey: 'printers.wifiSignal.excellent', color: 'text-bambu-green', bars: 4 };
   if (rssi >= -60) return { labelKey: 'printers.wifiSignal.good', color: 'text-bambu-green', bars: 3 };
@@ -1472,8 +1473,6 @@ function PrinterCard({
   onGetAssignment,
   onUnassignSpool,
   timeFormat = 'system',
-  cameraViewMode: _cameraViewMode = 'window',
-  onOpenEmbeddedCamera: _onOpenEmbeddedCamera,
   checkPrinterFirmware = true,
 }: {
   printer: Printer;
@@ -1818,13 +1817,27 @@ function PrinterCard({
   });
 
   const speedNames = ['', 'Silent', 'Standard', 'Sport', 'Ludicrous'];
+  const speedPercentages = ['', '50%', '100%', '124%', '166%'];
   const setSpeedMutation = useMutation({
     mutationFn: (mode: number) => api.setPrintSpeed(printer.id, mode),
+    onMutate: async (mode) => {
+      await queryClient.cancelQueries({ queryKey: ['printerStatus', printer.id] });
+      const previousStatus = queryClient.getQueryData(['printerStatus', printer.id]);
+      queryClient.setQueryData(['printerStatus', printer.id], (old: typeof status) => ({
+        ...old,
+        speed_level: mode,
+      }));
+      return { previousStatus };
+    },
     onSuccess: (_data, mode) => {
       showToast(`Speed set to ${speedNames[mode]}`);
-      queryClient.invalidateQueries({ queryKey: ['printerStatus', printer.id] });
     },
-    onError: (error: Error) => showToast(error.message || 'Failed to set speed', 'error'),
+    onError: (error: Error, _mode, context) => {
+      if (context?.previousStatus) {
+        queryClient.setQueryData(['printerStatus', printer.id], context.previousStatus);
+      }
+      showToast(error.message || 'Failed to set speed', 'error');
+    },
   });
 
   // Chamber light mutation with optimistic update
@@ -2104,10 +2117,6 @@ function PrinterCard({
   // State for AMS slot menu
   const [amsSlotMenu, setAmsSlotMenu] = useState<{ amsId: number; slotId: number } | null>(null);
 
-  if (shouldHide) {
-    return null;
-  }
-
   // Camera feed state
   const [cameraError, setCameraError] = useState(false);
   const [cameraLoading, setCameraLoading] = useState(true);
@@ -2116,14 +2125,19 @@ function PrinterCard({
   const reconnectAttemptsRef = useRef(0);
   const MAX_RECONNECT = 5;
 
-  // Cleanup camera stream on unmount
+  // Cleanup camera stream on unmount or when view mode changes away from expanded
   useEffect(() => {
+    const img = cameraImgRef.current;
+    if (viewMode !== 'expanded') {
+      // View mode switched away - disconnect the MJPEG stream immediately.
+      if (img) img.src = '';
+    }
     return () => {
-      if (cameraImgRef.current) {
-        cameraImgRef.current.src = '';
+      if (img) {
+        img.src = '';
       }
     };
-  }, []);
+  }, [viewMode]);
 
   // Reset camera when connection changes
   useEffect(() => {
@@ -2172,6 +2186,11 @@ function PrinterCard({
   const cameraStreamUrl = isConnected
     ? `/api/v1/printers/${printer.id}/camera/stream?fps=10&t=${cameraKey}`
     : '';
+  const canChangeSpeed = status?.state === 'RUNNING' || status?.state === 'PAUSE';
+
+  if (shouldHide) {
+    return null;
+  }
 
   return (
     <Card className="relative">
@@ -2283,6 +2302,47 @@ function PrinterCard({
                 </button>
               </div>
             </>
+          )}
+          {status?.speed_level != null && (
+            <div className="relative" ref={speedMenuRef}>
+              <button
+                onClick={() => canChangeSpeed && setShowSpeedMenu(!showSpeedMenu)}
+                disabled={!canChangeSpeed || !hasPermission('printers:control')}
+                className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-xs transition-colors ${
+                  canChangeSpeed
+                    ? 'text-amber-400 hover:bg-white/10'
+                    : 'text-bambu-gray/50 cursor-not-allowed'
+                }`}
+                title={`Speed: ${speedNames[status.speed_level] || 'Standard'} (${speedPercentages[status.speed_level] || '100%'})`}
+              >
+                <Gauge className="w-3.5 h-3.5" />
+                <span className="font-medium">{speedPercentages[status.speed_level] || '100%'}</span>
+              </button>
+              {showSpeedMenu && canChangeSpeed && (
+                <div className="absolute right-0 top-full mt-1 z-50 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl py-1 min-w-[140px]">
+                  {[
+                    { mode: 1, label: 'Silent (50%)' },
+                    { mode: 2, label: 'Standard (100%)' },
+                    { mode: 3, label: 'Sport (124%)' },
+                    { mode: 4, label: 'Ludicrous (166%)' },
+                  ].map(({ mode, label }) => (
+                    <button
+                      key={mode}
+                      onClick={() => { setSpeedMutation.mutate(mode); setShowSpeedMenu(false); }}
+                      disabled={setSpeedMutation.isPending || !hasPermission('printers:control')}
+                      className={`w-full px-3 py-1.5 text-left text-xs flex items-center gap-2 transition-colors ${
+                        status.speed_level === mode
+                          ? 'bg-bambu-green/20 text-bambu-green font-medium'
+                          : 'text-white hover:bg-bambu-dark-tertiary'
+                      } disabled:opacity-50`}
+                    >
+                      {status.speed_level === mode && <span className="w-1.5 h-1.5 rounded-full bg-bambu-green" />}
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
           {/* Menu button */}
           <div className="relative">
@@ -2587,42 +2647,6 @@ function PrinterCard({
                             <p className="text-sm text-bambu-gray">{status.stg_cur_name || 'Printing'}</p>
                             {/* Speed + Skip controls */}
                             <div className="flex items-center gap-1">
-                              {(status.state === 'RUNNING' || status.state === 'PAUSE') && (
-                                <div className="relative" ref={speedMenuRef}>
-                                  <button
-                                    onClick={() => setShowSpeedMenu(!showSpeedMenu)}
-                                    className="flex items-center gap-1 p-1.5 rounded transition-colors text-bambu-gray hover:text-white hover:bg-white/10"
-                                    title={`Speed: ${speedNames[status.speed_level] || 'Standard'}`}
-                                  >
-                                    <Gauge className="w-4 h-4" />
-                                    <span className="text-xs font-medium">{speedNames[status.speed_level] || '—'}</span>
-                                  </button>
-                                  {showSpeedMenu && (
-                                    <div className="absolute right-0 top-full mt-1 z-50 bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg shadow-xl py-1 min-w-[140px]">
-                                      {[
-                                        { mode: 1, label: 'Silent' },
-                                        { mode: 2, label: 'Standard' },
-                                        { mode: 3, label: 'Sport' },
-                                        { mode: 4, label: 'Ludicrous' },
-                                      ].map(({ mode, label }) => (
-                                        <button
-                                          key={mode}
-                                          onClick={() => { setSpeedMutation.mutate(mode); setShowSpeedMenu(false); }}
-                                          disabled={setSpeedMutation.isPending || !hasPermission('printers:control')}
-                                          className={`w-full px-3 py-1.5 text-left text-xs flex items-center gap-2 transition-colors ${
-                                            status.speed_level === mode
-                                              ? 'bg-bambu-green/20 text-bambu-green font-medium'
-                                              : 'text-white hover:bg-bambu-dark-tertiary'
-                                          } disabled:opacity-50`}
-                                        >
-                                          {status.speed_level === mode && <span className="w-1.5 h-1.5 rounded-full bg-bambu-green" />}
-                                          {label}
-                                        </button>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              )}
                               <button
                                 onClick={() => setShowSkipObjectsModal(true)}
                                 disabled={!(status.state === 'RUNNING' || status.state === 'PAUSE') || (status.printable_objects_count ?? 0) < 2 || !hasPermission('printers:control')}
@@ -5218,6 +5242,22 @@ export function PrintersPage() {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { hasPermission } = useAuth();
+  const [statusCacheTick, setStatusCacheTick] = useState(0);
+
+  useEffect(() => {
+    if (sortBy !== 'status') return;
+    let pending = false;
+    const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+      if (event.query.queryKey[0] !== 'printerStatus' || pending) return;
+      pending = true;
+      requestAnimationFrame(() => {
+        setStatusCacheTick((tick) => tick + 1);
+        pending = false;
+      });
+    });
+    return () => unsubscribe();
+  }, [queryClient, sortBy]);
+
   // Embedded camera viewer state - supports multiple simultaneous viewers
   // Persisted to localStorage so cameras reopen after navigation
   const [embeddedCameraPrinters, setEmbeddedCameraPrinters] = useState<Map<number, { id: number; name: string }>>(() => {
@@ -5407,6 +5447,7 @@ export function PrintersPage() {
 
   // Sort printers based on selected option
   const sortedPrinters = useMemo(() => {
+    void statusCacheTick;
     if (!printers) return [];
     const sorted = [...printers];
 
@@ -5450,7 +5491,7 @@ export function PrintersPage() {
     }
 
     return sorted;
-  }, [printers, sortBy, sortAsc, queryClient]);
+  }, [printers, sortBy, sortAsc, queryClient, statusCacheTick]);
 
   // Group printers by location when sorted by location
   const groupedPrinters = useMemo(() => {
@@ -5471,7 +5512,7 @@ export function PrintersPage() {
     if (selectedPrinterId === null || !sortedPrinters.find(p => p.id === selectedPrinterId)) {
       setSelectedPrinterId(sortedPrinters[0].id);
     }
-  }, [isSidebarCompact, sortedPrinters, selectedPrinterId]);
+  }, [isSidebarCompact, sortedPrinters, selectedPrinterId, setSelectedPrinterId]);
 
   // Portal: render StatusSummaryBar into the compact top bar
   const topbarPortal = isSidebarCompact ? document.getElementById('topbar-portal') : null;
