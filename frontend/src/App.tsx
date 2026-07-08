@@ -5,6 +5,7 @@ import { Layout } from './components/Layout';
 import { PrintersPage } from './pages/PrintersPage';
 import { ArchivesPage } from './pages/ArchivesPage';
 import { QueuePage } from './pages/QueuePage';
+import { ShopeeOrdersPage } from './pages/ShopeeOrdersPage';
 import { StatsPage } from './pages/StatsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { ProfilesPage } from './pages/ProfilesPage';
@@ -197,6 +198,7 @@ function App() {
                   <Route index element={<PrintersPage />} />
                   <Route path="archives" element={<ArchivesPage />} />
                   <Route path="queue" element={<QueuePage />} />
+                  <Route path="shopee" element={<ShopeeOrdersPage />} />
                   <Route path="stats" element={<StatsPage />} />
                   <Route path="profiles" element={<ProfilesPage />} />
                   <Route path="maintenance" element={<MaintenancePage />} />

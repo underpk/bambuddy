@@ -3317,6 +3317,60 @@ export interface WebAuthnCredentialInfo {
   last_used_at: string | null;
 }
 
+export interface ShopeeOrderItem {
+  id: number;
+  name: string;
+  variation: string | null;
+  quantity: number;
+  price: number | null;
+  queued_count: number;
+  mapping_id: number | null;
+}
+
+export interface ShopeeOrder {
+  id: number;
+  order_sn: string;
+  buyer_username: string | null;
+  order_date: string | null;
+  deliver_by_raw: string | null;
+  deliver_by: string | null;
+  subtotal: number | null;
+  shipping_fee: number | null;
+  total: number | null;
+  status: string;
+  seller_center_url: string | null;
+  notes: string | null;
+  created_at: string;
+  items: ShopeeOrderItem[];
+}
+
+export interface ShopeeMapping {
+  id: number;
+  match_name: string;
+  match_variation: string | null;
+  library_file_id: number;
+  library_file_name: string | null;
+  copies_per_unit: number;
+  auto_queue: boolean;
+  created_at: string;
+}
+
+export interface ShopeeSettingsData {
+  enabled: boolean;
+  imap_host: string;
+  imap_user: string;
+  password_set: boolean;
+  poll_interval_minutes: number;
+  since_days: number;
+}
+
+export interface ShopeeSyncResult {
+  new_orders: number;
+  cancellations: number;
+  print_jobs_queued: number;
+  emails_scanned: number;
+}
+
 export const api = {
   // Authentication
   getAuthStatus: () => request<AuthStatus>('/auth/status'),
@@ -3414,6 +3468,32 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ credential }),
     }),
+
+  // Shopee orders
+  getShopeeOrders: (statusFilter?: string) =>
+    request<ShopeeOrder[]>(`/shopee/orders${statusFilter ? `?status_filter=${statusFilter}` : ''}`),
+  updateShopeeOrder: (id: number, data: { status?: string; notes?: string }) =>
+    request<ShopeeOrder>(`/shopee/orders/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  shopeeSyncNow: () => request<ShopeeSyncResult>('/shopee/sync', { method: 'POST' }),
+  getShopeeSettings: () => request<ShopeeSettingsData>('/shopee/settings'),
+  saveShopeeSettings: (data: {
+    enabled: boolean;
+    imap_host: string;
+    imap_user: string;
+    imap_password: string;
+    poll_interval_minutes: number;
+    since_days: number;
+  }) => request<ShopeeSettingsData>('/shopee/settings', { method: 'PUT', body: JSON.stringify(data) }),
+  getShopeeMappings: () => request<ShopeeMapping[]>('/shopee/mappings'),
+  createShopeeMapping: (data: {
+    match_name: string;
+    match_variation?: string | null;
+    library_file_id: number;
+    copies_per_unit: number;
+    auto_queue: boolean;
+  }) => request<ShopeeMapping>('/shopee/mappings', { method: 'POST', body: JSON.stringify(data) }),
+  deleteShopeeMapping: (id: number) =>
+    request<{ message: string }>(`/shopee/mappings/${id}`, { method: 'DELETE' }),
 
   // 2FA - TOTP
   setupTOTP: () => request<TOTPSetupResponse>('/auth/2fa/totp/setup', { method: 'POST' }),

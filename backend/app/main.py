@@ -55,6 +55,7 @@ from backend.app.api.routes import (
     printers,
     projects,
     settings as settings_routes,
+    shopee,
     slice_jobs,
     slicer_presets,
     smart_plugs,
@@ -6246,6 +6247,37 @@ async def lifespan(app: FastAPI):
 
     start_loop_watchdog()
 
+    # Shopee order email poller — ingests seller notification emails and
+    # auto-queues mapped products (see services/shopee_service.py)
+    async def _background_shopee_poll():
+        import asyncio as _asyncio
+
+        from backend.app.api.routes.shopee import load_shopee_settings
+        from backend.app.services.shopee_service import fetch_shopee_emails, sync_orders
+
+        while True:
+            interval_minutes = 5
+            try:
+                async with async_session() as db:
+                    shopee_settings = await load_shopee_settings(db)
+                    interval_minutes = shopee_settings.poll_interval_minutes
+                    if shopee_settings.enabled and shopee_settings.imap_user and shopee_settings.imap_password:
+                        parsed = await _asyncio.to_thread(
+                            fetch_shopee_emails,
+                            shopee_settings.imap_host,
+                            shopee_settings.imap_user,
+                            shopee_settings.imap_password,
+                            shopee_settings.since_days,
+                        )
+                        counters = await sync_orders(db, parsed)
+                        if counters["new_orders"] or counters["cancellations"]:
+                            logging.info("Shopee poll: %s", counters)
+            except Exception as e:
+                logging.warning("Shopee poll failed: %s", e)
+            await _asyncio.sleep(max(60, interval_minutes * 60))
+
+    spawn_background_task(_background_shopee_poll(), name="background-shopee-poll")
+
     # Initialize virtual printer manager and sync from DB
     from backend.app.services.virtual_printer import virtual_printer_manager
 
@@ -6721,6 +6753,7 @@ async def trace_id_middleware(request, call_next):
 app.include_router(auth.router, prefix=app_settings.api_prefix)
 app.include_router(mfa.router, prefix=app_settings.api_prefix)
 app.include_router(webauthn.router, prefix=app_settings.api_prefix)
+app.include_router(shopee.router, prefix=app_settings.api_prefix)
 app.include_router(bug_report.router, prefix=app_settings.api_prefix)
 app.include_router(users.router, prefix=app_settings.api_prefix)
 app.include_router(groups.router, prefix=app_settings.api_prefix)

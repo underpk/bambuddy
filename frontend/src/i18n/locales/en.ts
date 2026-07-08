@@ -4,6 +4,7 @@ export default {
     printers: 'Printers',
     archives: 'Archives',
     queue: 'Print Queue',
+    shopee: 'Shopee Orders',
     stats: 'Statistics',
     profiles: 'Profiles',
     maintenance: 'Maintenance',
