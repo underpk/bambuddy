@@ -205,9 +205,7 @@ async def register_begin(
         user_id=str(current_user.id).encode(),
         user_name=current_user.username,
         user_display_name=current_user.username,
-        exclude_credentials=[
-            PublicKeyCredentialDescriptor(id=base64url_to_bytes(c.credential_id)) for c in existing
-        ],
+        exclude_credentials=[PublicKeyCredentialDescriptor(id=base64url_to_bytes(c.credential_id)) for c in existing],
         authenticator_selection=AuthenticatorSelectionCriteria(
             resident_key=ResidentKeyRequirement.PREFERRED,
             user_verification=UserVerificationRequirement.REQUIRED,
@@ -228,9 +226,7 @@ async def register_complete(
 
     credential_json = json.dumps(body.credential)
     try:
-        client_data = json.loads(
-            base64url_to_bytes(body.credential["response"]["clientDataJSON"])
-        )
+        client_data = json.loads(base64url_to_bytes(body.credential["response"]["clientDataJSON"]))
         expected_challenge = client_data["challenge"]
     except (KeyError, ValueError, TypeError):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Malformed credential")
@@ -300,9 +296,7 @@ async def login_complete(
     credential_json = json.dumps(body.credential)
 
     try:
-        client_data = json.loads(
-            base64url_to_bytes(body.credential["response"]["clientDataJSON"])
-        )
+        client_data = json.loads(base64url_to_bytes(body.credential["response"]["clientDataJSON"]))
         expected_challenge = client_data["challenge"]
         raw_id = body.credential["rawId"]
     except (KeyError, ValueError, TypeError):
@@ -334,9 +328,7 @@ async def login_complete(
     cred.sign_count = verification.new_sign_count
     cred.last_used_at = datetime.now(timezone.utc)
 
-    result = await db.execute(
-        select(User).where(User.id == cred.user_id).options(selectinload(User.groups))
-    )
+    result = await db.execute(select(User).where(User.id == cred.user_id).options(selectinload(User.groups)))
     user = result.scalar_one_or_none()
     if user is None or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not active")

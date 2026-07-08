@@ -113,9 +113,7 @@ async def sync_now(
             detail="IMAP username and app password must be configured first",
         )
     try:
-        parsed = await asyncio.to_thread(
-            fetch_shopee_emails, s.imap_host, s.imap_user, s.imap_password, s.since_days
-        )
+        parsed = await asyncio.to_thread(fetch_shopee_emails, s.imap_host, s.imap_user, s.imap_password, s.since_days)
     except Exception as e:
         _logger.warning("Shopee manual sync failed: %s", e)
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"IMAP fetch failed: {e}")

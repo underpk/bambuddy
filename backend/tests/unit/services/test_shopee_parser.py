@@ -48,7 +48,11 @@ def test_parse_ship_email():
     assert order.order_sn == "2607096MHPE1YH"
     assert order.buyer_username == "captain887"
     assert order.deliver_by_raw == "14 ก.ค. 2026"
-    assert order.deliver_by is not None and (order.deliver_by.year, order.deliver_by.month, order.deliver_by.day) == (2026, 7, 14)
+    assert order.deliver_by is not None and (order.deliver_by.year, order.deliver_by.month, order.deliver_by.day) == (
+        2026,
+        7,
+        14,
+    )
     assert order.order_date is not None and order.order_date.hour == 23
     assert order.subtotal == 260.0
     assert order.shipping_fee == 29.0
