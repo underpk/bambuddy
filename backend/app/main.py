@@ -6370,6 +6370,11 @@ PUBLIC_API_ROUTES = {
     # 2FA routes that are called BEFORE a JWT is issued (pre-auth flow)
     "/api/v1/auth/2fa/verify",  # Exchange pre_auth_token + 2FA code for JWT
     "/api/v1/auth/2fa/email/send",  # Send OTP email (pre_auth_token based)
+    # WebAuthn (passkey) routes needed BEFORE login — status drives the
+    # login-page button; begin/complete perform the usernameless login itself
+    "/api/v1/auth/webauthn/status",
+    "/api/v1/auth/webauthn/login/begin",
+    "/api/v1/auth/webauthn/login/complete",
     # OIDC routes that must be reachable without a JWT
     "/api/v1/auth/oidc/providers",  # Public list of enabled providers
     "/api/v1/auth/oidc/callback",  # Redirect target from OIDC provider
