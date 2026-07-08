@@ -42,6 +42,8 @@ class TokenType(str, Enum):
     PASSWORD_RESET = "password_reset"
     EMAIL_OTP_SETUP = "email_otp_setup"
     SLICER_DOWNLOAD = "slicer_download"
+    WEBAUTHN_REGISTER = "webauthn_reg"
+    WEBAUTHN_LOGIN = "webauthn_login"
 
 
 class EventType(str, Enum):

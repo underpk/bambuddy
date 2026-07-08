@@ -36,6 +36,7 @@ from backend.app.models.user import User
 from backend.app.models.user_email_pref import UserEmailPreference
 from backend.app.models.user_otp_code import UserOTPCode
 from backend.app.models.user_totp import UserTOTP
+from backend.app.models.webauthn_credential import WebAuthnCredential
 
 __all__ = [
     "Printer",
@@ -83,4 +84,5 @@ __all__ = [
     "AuthEphemeralToken",
     "AuthRateLimitEvent",
     "LongLivedToken",
+    "WebAuthnCredential",
 ]

@@ -3299,6 +3299,24 @@ export interface AuthStatus {
 }
 
 // API functions
+export interface WebAuthnStatus {
+  credentials_exist: boolean;
+}
+
+export interface WebAuthnOptions {
+  // PublicKeyCredential options in WebAuthn JSON form (base64url fields)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  options: any;
+}
+
+export interface WebAuthnCredentialInfo {
+  id: number;
+  device_name: string | null;
+  transports: string[];
+  created_at: string;
+  last_used_at: string | null;
+}
+
 export const api = {
   // Authentication
   getAuthStatus: () => request<AuthStatus>('/auth/status'),
@@ -3376,6 +3394,26 @@ export const api = {
 
   // 2FA - status
   get2FAStatus: () => request<TwoFAStatus>('/auth/2fa/status'),
+
+  // WebAuthn (passkeys)
+  webauthnStatus: () => request<WebAuthnStatus>('/auth/webauthn/status'),
+  webauthnListCredentials: () => request<WebAuthnCredentialInfo[]>('/auth/webauthn/credentials'),
+  webauthnDeleteCredential: (id: number) =>
+    request<{ message: string }>(`/auth/webauthn/credentials/${id}`, { method: 'DELETE' }),
+  webauthnRegisterBegin: () =>
+    request<WebAuthnOptions>('/auth/webauthn/register/begin', { method: 'POST' }),
+  webauthnRegisterComplete: (credential: unknown, deviceName?: string) =>
+    request<WebAuthnCredentialInfo>('/auth/webauthn/register/complete', {
+      method: 'POST',
+      body: JSON.stringify({ credential, device_name: deviceName }),
+    }),
+  webauthnLoginBegin: () =>
+    request<WebAuthnOptions>('/auth/webauthn/login/begin', { method: 'POST' }),
+  webauthnLoginComplete: (credential: unknown) =>
+    request<LoginResponse>('/auth/webauthn/login/complete', {
+      method: 'POST',
+      body: JSON.stringify({ credential }),
+    }),
 
   // 2FA - TOTP
   setupTOTP: () => request<TOTPSetupResponse>('/auth/2fa/totp/setup', { method: 'POST' }),

@@ -35,6 +35,7 @@ import { FailureDetectionSettings } from '../components/FailureDetectionSettings
 import { EmailSettings } from '../components/EmailSettings';
 import { LDAPSettings } from '../components/LDAPSettings';
 import { TwoFactorSettings } from '../components/TwoFactorSettings';
+import { PasskeySettings } from '../components/PasskeySettings';
 import { OIDCProviderSettings } from '../components/OIDCProviderSettings';
 import { SecurityStatusCard } from '../components/SecurityStatusCard';
 import { APIBrowser } from '../components/APIBrowser';
@@ -108,6 +109,7 @@ registerSettingsSearch({ labelKey: 'failureDetection.historyTitle', labelFallbac
 registerSettingsSearch({ labelKey: 'settings.email.advancedAuth', labelFallback: 'Advanced Email Authentication', tab: 'users', subTab: 'email', keywords: 'email authentication advanced password reset self-service forgot', anchor: 'card-email-advanced-auth' });
 registerSettingsSearch({ labelKey: 'settings.email.testConnection', labelFallback: 'Test SMTP Connection', tab: 'users', subTab: 'email', keywords: 'email smtp test connection send check', anchor: 'card-email-test' });
 // Two-Factor sub-cards (subTab=twofa)
+registerSettingsSearch({ labelKey: 'settings.passkeys.title', labelFallback: 'Passkeys', tab: 'users', subTab: 'twofa', keywords: 'passkey webauthn biometric fingerprint face touch id windows hello security key', anchor: 'card-passkeys' });
 registerSettingsSearch({ labelKey: 'settings.twoFa.totpTitle', labelFallback: 'Authenticator App (TOTP)', tab: 'users', subTab: 'twofa', keywords: 'two factor 2fa totp authenticator app google authy otp', anchor: 'card-2fa-totp' });
 registerSettingsSearch({ labelKey: 'settings.twoFa.emailOtpTitle', labelFallback: 'Email One-Time Codes', tab: 'users', subTab: 'twofa', keywords: 'two factor 2fa email otp one time code', anchor: 'card-2fa-emailotp' });
 registerSettingsSearch({ labelKey: 'settings.twoFa.linkedAccounts', labelFallback: 'Linked Accounts', tab: 'users', subTab: 'twofa', keywords: 'two factor 2fa linked accounts sso oidc provider google github', anchor: 'card-2fa-linked' });
@@ -5668,7 +5670,8 @@ export function SettingsPage() {
           )}
 
           {usersSubTab === 'twofa' && (
-            <div className="max-w-2xl">
+            <div className="max-w-2xl space-y-6">
+              <PasskeySettings />
               <TwoFactorSettings />
             </div>
           )}

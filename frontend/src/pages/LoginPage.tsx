@@ -5,8 +5,9 @@ import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme } from '../contexts/ThemeContext';
-import { X, Mail, Shield, Smartphone, Key } from 'lucide-react';
+import { X, Mail, Shield, Smartphone, Key, Fingerprint } from 'lucide-react';
 import { api, type LoginResponse, type OIDCProvider, type TokenPersistence } from '../api/client';
+import { getPasskeyAssertion, isWebAuthnSupported } from '../utils/webauthn';
 import { Card, CardHeader, CardContent } from '../components/Card';
 import { Button } from '../components/Button';
 
@@ -368,6 +369,37 @@ export function LoginPage() {
     onError: (error: Error) => {
       showToast(error.message || t('login.twoFA.invalidCode'), 'error');
       setTwoFACode('');
+    },
+  });
+
+  // Passkey (WebAuthn) login — usernameless, discoverable credential
+  const { data: webauthnStatus } = useQuery({
+    queryKey: ['webauthnStatus'],
+    queryFn: () => api.webauthnStatus(),
+    staleTime: 60_000,
+    retry: false,
+  });
+
+  const passkeyLoginMutation = useMutation({
+    mutationFn: async () => {
+      const { options } = await api.webauthnLoginBegin();
+      const credential = await getPasskeyAssertion(options);
+      return api.webauthnLoginComplete(credential);
+    },
+    onSuccess: (resp: LoginResponse) => {
+      if (resp.access_token && resp.user) {
+        loginWithToken(resp.access_token, resp.user, toPersistence(rememberMe));
+        showToast(t('login.loginSuccess'));
+        navigate(resolvePostLoginRedirect(), { replace: true });
+      } else {
+        showToast(t('login.loginFailed'), 'error');
+      }
+    },
+    onError: (error: Error) => {
+      // NotAllowedError = user dismissed the platform prompt — not an error worth toasting
+      if (error.name !== 'NotAllowedError') {
+        showToast(error.message || t('login.loginFailed'), 'error');
+      }
     },
   });
 
@@ -777,6 +809,22 @@ export function LoginPage() {
               {loginMutation.isPending ? t('login.signingIn') : t('login.signIn')}
             </button>
           </div>
+
+          {isWebAuthnSupported() && webauthnStatus?.credentials_exist && (
+            <div>
+              <button
+                type="button"
+                onClick={() => passkeyLoginMutation.mutate()}
+                disabled={passkeyLoginMutation.isPending}
+                className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-bambu-dark-tertiary hover:bg-bambu-dark-tertiary/70 text-white font-medium rounded-lg border border-bambu-dark-tertiary focus:outline-none focus:ring-2 focus:ring-bambu-green/50 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Fingerprint className="w-5 h-5 text-bambu-green" />
+                {passkeyLoginMutation.isPending
+                  ? t('login.passkeySigningIn', 'Waiting for passkey…')
+                  : t('login.passkeySignIn', 'Sign in with passkey')}
+              </button>
+            </div>
+          )}
 
           <div className="text-center">
             <button
