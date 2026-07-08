@@ -96,8 +96,13 @@ class ShopeeProductMapping(Base):
     match_name: Mapped[str] = mapped_column(String(255), nullable=False)
     match_variation: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
-    library_file_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("library_files.id", ondelete="CASCADE"), nullable=False
+    # Print source: exactly one of library_file_id / archive_id is set —
+    # the print queue accepts either kind
+    library_file_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("library_files.id", ondelete="CASCADE"), nullable=True
+    )
+    archive_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("print_archives.id", ondelete="CASCADE"), nullable=True
     )
 
     # Print queue items to create per ordered unit (multi-part products > 1)

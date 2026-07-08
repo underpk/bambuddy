@@ -48,7 +48,9 @@ class ShopeeOrderUpdate(BaseModel):
 class ShopeeMappingCreate(BaseModel):
     match_name: str = Field(min_length=1, max_length=255)
     match_variation: str | None = Field(default=None, max_length=255)
-    library_file_id: int
+    # Exactly one of the two print sources must be set
+    library_file_id: int | None = None
+    archive_id: int | None = None
     copies_per_unit: int = Field(default=1, ge=1, le=50)
     auto_queue: bool = True
 
@@ -56,7 +58,8 @@ class ShopeeMappingCreate(BaseModel):
 class ShopeeMappingResponse(ShopeeMappingCreate):
     id: int
     created_at: datetime
-    library_file_name: str | None = None
+    # Display name of whichever source the mapping points at
+    source_name: str | None = None
 
     class Config:
         from_attributes = True

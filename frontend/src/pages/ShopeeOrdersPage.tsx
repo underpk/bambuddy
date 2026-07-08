@@ -193,32 +193,40 @@ function ShopeeMappingsPanel() {
     queryKey: ['shopee-library-files'],
     queryFn: () => api.getLibraryFiles(null, true, undefined, undefined, true),
   });
+  const { data: archives } = useQuery({
+    queryKey: ['shopee-archives'],
+    queryFn: () => api.getArchives(),
+  });
 
   const printableFiles = useMemo(
     () => (libraryFiles ?? []).filter((f) => /\.(3mf|gcode)(\.|$)/i.test(f.filename)),
     [libraryFiles]
   );
+  const archiveList = useMemo(() => archives ?? [], [archives]);
 
   const [matchName, setMatchName] = useState('');
   const [matchVariation, setMatchVariation] = useState('');
-  const [fileId, setFileId] = useState<number | ''>('');
+  const [sourceKey, setSourceKey] = useState('');
   const [copies, setCopies] = useState(1);
   const [autoQueue, setAutoQueue] = useState(true);
 
   const createMutation = useMutation({
-    mutationFn: () =>
-      api.createShopeeMapping({
+    mutationFn: () => {
+      const [kind, idStr] = sourceKey.split(':');
+      return api.createShopeeMapping({
         match_name: matchName.trim(),
         match_variation: matchVariation.trim() || null,
-        library_file_id: fileId as number,
+        library_file_id: kind === 'lib' ? Number(idStr) : null,
+        archive_id: kind === 'arc' ? Number(idStr) : null,
         copies_per_unit: copies,
         auto_queue: autoQueue,
-      }),
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['shopee-mappings'] });
       setMatchName('');
       setMatchVariation('');
-      setFileId('');
+      setSourceKey('');
       setCopies(1);
       showToast(t('shopee.mappingAdded', 'Mapping added'), 'success');
     },
@@ -260,7 +268,7 @@ function ShopeeMappingsPanel() {
                       “{m.match_name}”{m.match_variation ? ` · ${m.match_variation}` : ''}
                     </p>
                     <p className="text-bambu-gray text-xs truncate">
-                      → {m.library_file_name ?? `file #${m.library_file_id}`} ×{m.copies_per_unit}
+                      → {m.source_name ?? `#${m.library_file_id ?? m.archive_id}`} ×{m.copies_per_unit}
                       {m.auto_queue
                         ? ` · ${t('shopee.autoQueueOn', 'auto-queue')}`
                         : ` · ${t('shopee.autoQueueOff', 'annotate only')}`}
@@ -287,13 +295,26 @@ function ShopeeMappingsPanel() {
               onChange={(e) => setMatchVariation(e.target.value)}
               placeholder={t('shopee.matchVariation', 'Variation contains… (optional)')}
             />
-            <select className={inputCls} value={fileId} onChange={(e) => setFileId(e.target.value ? Number(e.target.value) : '')}>
-              <option value="">{t('shopee.pickFile', 'Choose library file…')}</option>
-              {printableFiles.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.filename}
-                </option>
-              ))}
+            <select className={inputCls} value={sourceKey} onChange={(e) => setSourceKey(e.target.value)}>
+              <option value="">{t('shopee.pickFile', 'Choose print file…')}</option>
+              {archiveList.length > 0 && (
+                <optgroup label={t('shopee.archives', 'Print archives')}>
+                  {archiveList.map((a) => (
+                    <option key={`arc-${a.id}`} value={`arc:${a.id}`}>
+                      {a.filename}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {printableFiles.length > 0 && (
+                <optgroup label={t('shopee.libraryFiles', 'Library files')}>
+                  {printableFiles.map((f) => (
+                    <option key={`lib-${f.id}`} value={`lib:${f.id}`}>
+                      {f.filename}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
             </select>
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-2">
@@ -315,7 +336,7 @@ function ShopeeMappingsPanel() {
           </div>
           <Button
             size="sm"
-            disabled={!matchName.trim() || fileId === '' || createMutation.isPending}
+            disabled={!matchName.trim() || !sourceKey || createMutation.isPending}
             onClick={() => createMutation.mutate()}
             className="flex items-center gap-2"
           >

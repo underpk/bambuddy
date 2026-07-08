@@ -275,11 +275,23 @@ async def _auto_queue_item(
     if not mapping.auto_queue:
         return 0
 
-    lib_file = (
-        await db.execute(select(LibraryFile).where(LibraryFile.id == mapping.library_file_id))
-    ).scalar_one_or_none()
-    if lib_file is None:
-        _logger.warning("Shopee mapping %d points to missing library file %d", mapping.id, mapping.library_file_id)
+    if mapping.library_file_id is not None:
+        source = (
+            await db.execute(select(LibraryFile).where(LibraryFile.id == mapping.library_file_id))
+        ).scalar_one_or_none()
+        source_desc = f"library file {mapping.library_file_id}"
+    elif mapping.archive_id is not None:
+        from backend.app.models.archive import PrintArchive
+
+        source = (
+            await db.execute(select(PrintArchive).where(PrintArchive.id == mapping.archive_id))
+        ).scalar_one_or_none()
+        source_desc = f"archive {mapping.archive_id}"
+    else:
+        source = None
+        source_desc = "nothing"
+    if source is None:
+        _logger.warning("Shopee mapping %d points to missing %s", mapping.id, source_desc)
         return 0
 
     max_pos = (await db.execute(select(func.max(PrintQueueItem.position)))).scalar() or 0
@@ -288,6 +300,7 @@ async def _auto_queue_item(
         db.add(
             PrintQueueItem(
                 library_file_id=mapping.library_file_id,
+                archive_id=mapping.archive_id,
                 position=max_pos + 1 + i,
                 # Queued jobs wait for a person to press start — a printer with
                 # yesterday's print still on the plate must not fire on its own.
@@ -295,10 +308,10 @@ async def _auto_queue_item(
             )
         )
     _logger.info(
-        "Shopee order %s: queued %d × library file %d (%s)",
+        "Shopee order %s: queued %d × %s (%s)",
         order.order_sn,
         count,
-        mapping.library_file_id,
+        source_desc,
         item.name[:60],
     )
     return count

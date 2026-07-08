@@ -3348,8 +3348,9 @@ export interface ShopeeMapping {
   id: number;
   match_name: string;
   match_variation: string | null;
-  library_file_id: number;
-  library_file_name: string | null;
+  library_file_id: number | null;
+  archive_id: number | null;
+  source_name: string | null;
   copies_per_unit: number;
   auto_queue: boolean;
   created_at: string;
@@ -3488,7 +3489,8 @@ export const api = {
   createShopeeMapping: (data: {
     match_name: string;
     match_variation?: string | null;
-    library_file_id: number;
+    library_file_id?: number | null;
+    archive_id?: number | null;
     copies_per_unit: number;
     auto_queue: boolean;
   }) => request<ShopeeMapping>('/shopee/mappings', { method: 'POST', body: JSON.stringify(data) }),

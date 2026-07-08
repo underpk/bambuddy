@@ -19,6 +19,7 @@ from backend.app.api.routes.settings import get_setting, set_setting
 from backend.app.core.auth import Permission, RequirePermissionIfAuthEnabled, get_current_active_user
 from backend.app.core.database import get_db
 from backend.app.core.encryption import is_encryption_active, mfa_decrypt, mfa_encrypt
+from backend.app.models.archive import PrintArchive
 from backend.app.models.library import LibraryFile
 from backend.app.models.shopee import ShopeeOrder, ShopeeProductMapping
 from backend.app.models.user import User
@@ -161,14 +162,15 @@ async def list_mappings(
     current_user: User = Depends(get_current_active_user),
 ):
     result = await db.execute(
-        select(ShopeeProductMapping, LibraryFile.filename)
+        select(ShopeeProductMapping, LibraryFile.filename, PrintArchive.filename)
         .outerjoin(LibraryFile, LibraryFile.id == ShopeeProductMapping.library_file_id)
+        .outerjoin(PrintArchive, PrintArchive.id == ShopeeProductMapping.archive_id)
         .order_by(ShopeeProductMapping.id)
     )
     out = []
-    for mapping, file_name in result.all():
+    for mapping, lib_name, archive_name in result.all():
         resp = ShopeeMappingResponse.model_validate(mapping)
-        resp.library_file_name = file_name
+        resp.source_name = lib_name or archive_name
         out.append(resp)
     return out
 
@@ -179,18 +181,27 @@ async def create_mapping(
     db: AsyncSession = Depends(get_db),
     current_user: User | None = RequirePermissionIfAuthEnabled(Permission.SETTINGS_UPDATE),
 ):
-    lib_file = (
-        await db.execute(select(LibraryFile).where(LibraryFile.id == body.library_file_id))
-    ).scalar_one_or_none()
-    if lib_file is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Library file not found")
+    if (body.library_file_id is None) == (body.archive_id is None):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Exactly one of library_file_id or archive_id must be set",
+        )
+
+    if body.library_file_id is not None:
+        source = (
+            await db.execute(select(LibraryFile).where(LibraryFile.id == body.library_file_id))
+        ).scalar_one_or_none()
+    else:
+        source = (await db.execute(select(PrintArchive).where(PrintArchive.id == body.archive_id))).scalar_one_or_none()
+    if source is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Print source not found")
 
     mapping = ShopeeProductMapping(**body.model_dump())
     db.add(mapping)
     await db.commit()
     await db.refresh(mapping)
     resp = ShopeeMappingResponse.model_validate(mapping)
-    resp.library_file_name = lib_file.filename
+    resp.source_name = source.filename
     return resp
 
 
